@@ -1,0 +1,142 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isAdminClaim() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function profilePath(userId) {
+      return /databases/$(database)/documents/profiles/$(userId);
+    }
+
+    function profile(userId) {
+      return get(profilePath(userId)).data;
+    }
+
+    function isTenantActive(userId) {
+      return signedIn()
+        && exists(profilePath(userId))
+        && profile(userId).role == 'tenant'
+        && profile(userId).status in ['trialing', 'active'];
+    }
+
+    function ownsExistingData() {
+      return signedIn() && resource.data.user_id == uid();
+    }
+
+    function ownsIncomingData() {
+      return signedIn() && request.resource.data.user_id == uid();
+    }
+
+    function keepsOwner() {
+      return !('user_id' in resource.data)
+        || request.resource.data.user_id == resource.data.user_id;
+    }
+
+    function validProfileStatus(status) {
+      return status in ['trialing', 'active', 'blocked', 'cancelled'];
+    }
+
+    match /profiles/{userId} {
+      allow get: if signedIn() && (userId == uid() || isAdminClaim());
+      allow list: if isAdminClaim();
+
+      allow create: if signedIn()
+        && userId == uid()
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == 'tenant'
+        && request.resource.data.status == 'trialing';
+
+      allow update: if signedIn()
+        && userId == uid()
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'display_name',
+          'phone',
+          'business_type',
+          'updated_at'
+        ])
+        || (
+          isAdminClaim()
+          && validProfileStatus(request.resource.data.status)
+        );
+
+      allow delete: if isAdminClaim();
+    }
+
+    match /company_profiles/{userId} {
+      allow read: if signedIn() && (userId == uid() || isAdminClaim());
+      allow create: if userId == uid()
+        && isTenantActive(uid())
+        && ownsIncomingData();
+      allow update: if signedIn()
+        && userId == uid()
+        && isTenantActive(uid())
+        && keepsOwner()
+        && request.resource.data.user_id == uid();
+      allow delete: if isAdminClaim();
+    }
+
+    match /catalog_overrides/{userId} {
+      allow read: if signedIn() && (userId == uid() || isAdminClaim());
+      allow create: if signedIn()
+        && userId == uid()
+        && isTenantActive(uid())
+        && request.resource.data.user_id == uid();
+      allow update: if signedIn()
+        && userId == uid()
+        && isTenantActive(uid())
+        && keepsOwner()
+        && request.resource.data.user_id == uid();
+      allow delete: if signedIn() && userId == uid() && isTenantActive(uid());
+    }
+
+    match /clientes/{clienteId} {
+      allow read: if isAdminClaim() || (ownsExistingData() && isTenantActive(uid()));
+      allow create: if ownsIncomingData() && isTenantActive(uid());
+      allow update: if ownsExistingData()
+        && isTenantActive(uid())
+        && keepsOwner()
+        && request.resource.data.user_id == uid();
+      allow delete: if ownsExistingData() && isTenantActive(uid());
+    }
+
+    match /orcamentos/{orcamentoId} {
+      allow read: if isAdminClaim() || (ownsExistingData() && isTenantActive(uid()));
+      allow create: if ownsIncomingData() && isTenantActive(uid());
+      allow update: if ownsExistingData()
+        && isTenantActive(uid())
+        && keepsOwner()
+        && request.resource.data.user_id == uid();
+      allow delete: if ownsExistingData() && isTenantActive(uid());
+    }
+
+    match /public_orcamentos/{publicId} {
+      allow get: if resource.data.status == 'published';
+      allow list: if false;
+      allow create, update: if signedIn()
+        && request.resource.data.user_id == uid()
+        && isTenantActive(uid());
+      allow delete: if signedIn()
+        && resource.data.user_id == uid()
+        && isTenantActive(uid());
+    }
+
+    match /usage/{userId} {
+      allow read: if signedIn() && (userId == uid() || isAdminClaim());
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
