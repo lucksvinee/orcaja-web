@@ -1,13 +1,52 @@
 import { useState } from 'react';
 import logo from '../assets/scarface-logo.png';
 import { auth, db } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const getTrialEndsAt = () => {
   const trialEndsAt = new Date();
   trialEndsAt.setDate(trialEndsAt.getDate() + 14);
   return trialEndsAt.toISOString();
+};
+
+const getFriendlyAuthError = (error) => {
+  const messages = {
+    'auth/email-already-in-use': 'Esse e-mail já tem uma conta. Clique em Entrar ou use Esqueci minha senha.',
+    'auth/invalid-credential': 'E-mail ou senha incorretos.',
+    'auth/invalid-email': 'Digite um e-mail válido.',
+    'auth/missing-password': 'Digite sua senha.',
+    'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos e tente novamente.',
+    'auth/user-disabled': 'Esta conta foi desativada. Entre em contato com o suporte.',
+    'auth/user-not-found': 'Conta não encontrada. Confira o e-mail ou crie uma conta.',
+    'auth/weak-password': 'A senha deve ter pelo menos 6 caracteres.',
+    'auth/wrong-password': 'Senha incorreta.'
+  };
+
+  return messages[error?.code] || error?.message || 'Não foi possível concluir a operação.';
+};
+
+const buildTrialProfile = (user) => ({
+  email: user.email,
+  role: 'tenant',
+  status: 'trialing',
+  plan: 'trial',
+  trial_ends_at: getTrialEndsAt(),
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString()
+});
+
+const ensureTenantProfile = async (user) => {
+  const profileRef = doc(db, 'profiles', user.uid);
+  const profileSnap = await getDoc(profileRef);
+
+  if (!profileSnap.exists()) {
+    await setDoc(profileRef, buildTrialProfile(user));
+  }
 };
 
 export default function Login() {
@@ -24,9 +63,10 @@ export default function Login() {
     setMsg('');
 
     try {
-      await signInWithEmailAndPassword(auth, email, senha);
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), senha);
+      await ensureTenantProfile(userCredential.user);
     } catch (error) {
-      setErro(error.message);
+      setErro(getFriendlyAuthError(error));
     }
     setLoading(false);
   };
@@ -53,19 +93,30 @@ export default function Login() {
     setMsg('');
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
-      await setDoc(doc(db, 'profiles', userCredential.user.uid), {
-        email: userCredential.user.email,
-        role: 'tenant',
-        status: 'trialing',
-        plan: 'trial',
-        trial_ends_at: getTrialEndsAt(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), senha);
+      await ensureTenantProfile(userCredential.user);
       setMsg('Conta criada com sucesso! Redirecionando...');
     } catch (error) {
-      setErro(error.message);
+      setErro(getFriendlyAuthError(error));
+    }
+    setLoading(false);
+  };
+
+  const handlePasswordReset = async () => {
+    if (!email) {
+      setErro('Digite seu e-mail para receber o link de recuperação.');
+      return;
+    }
+
+    setLoading(true);
+    setErro('');
+    setMsg('');
+
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setMsg('Enviamos um link de recuperação para o seu e-mail.');
+    } catch (error) {
+      setErro(getFriendlyAuthError(error));
     }
     setLoading(false);
   };
@@ -112,6 +163,16 @@ export default function Login() {
               className="w-full p-3 rounded-lg bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
               placeholder="••••••••"
             />
+            <div className="mt-2 text-right">
+              <button
+                type="button"
+                onClick={handlePasswordReset}
+                disabled={loading}
+                className="text-sm font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
+              >
+                Esqueci minha senha
+              </button>
+            </div>
           </div>
           <div className="flex gap-2 mt-6">
             <button 
