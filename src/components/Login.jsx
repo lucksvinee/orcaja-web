@@ -6,13 +6,7 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-
-const getTrialEndsAt = () => {
-  const trialEndsAt = new Date();
-  trialEndsAt.setDate(trialEndsAt.getDate() + 14);
-  return trialEndsAt.toISOString();
-};
+import { ensureTenantProfile } from '../profileUtils';
 
 const getFriendlyAuthError = (error) => {
   const messages = {
@@ -30,25 +24,6 @@ const getFriendlyAuthError = (error) => {
   return messages[error?.code] || error?.message || 'Não foi possível concluir a operação.';
 };
 
-const buildTrialProfile = (user) => ({
-  email: user.email,
-  role: 'tenant',
-  status: 'trialing',
-  plan: 'trial',
-  trial_ends_at: getTrialEndsAt(),
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString()
-});
-
-const ensureTenantProfile = async (user) => {
-  const profileRef = doc(db, 'profiles', user.uid);
-  const profileSnap = await getDoc(profileRef);
-
-  if (!profileSnap.exists()) {
-    await setDoc(profileRef, buildTrialProfile(user));
-  }
-};
-
 export default function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -64,7 +39,7 @@ export default function Login() {
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), senha);
-      await ensureTenantProfile(userCredential.user);
+      await ensureTenantProfile(db, userCredential.user);
     } catch (error) {
       setErro(getFriendlyAuthError(error));
     }
@@ -94,7 +69,7 @@ export default function Login() {
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), senha);
-      await ensureTenantProfile(userCredential.user);
+      await ensureTenantProfile(db, userCredential.user);
       setMsg('Conta criada com sucesso! Redirecionando...');
     } catch (error) {
       setErro(getFriendlyAuthError(error));

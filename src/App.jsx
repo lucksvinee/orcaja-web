@@ -10,6 +10,7 @@ import LoginPage from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import BlockedPage from './components/BlockedPage';
 import { auth, db } from './firebase';
+import { ensureTenantProfile } from './profileUtils';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -83,7 +84,11 @@ export default function App() {
           } else if (idTokenResult.claims.admin) {
             setProfile({ id: user.uid, email: user.email, role: 'admin', status: 'active' });
           } else {
-            setProfile({ error: true, message: 'Perfil não encontrado no Firebase.' });
+            const createdProfile = await ensureTenantProfile(db, user);
+            setProfile({
+              id: user.uid,
+              ...createdProfile
+            });
           }
         } catch (profileError) {
           console.error('Erro ao buscar perfil:', profileError);
