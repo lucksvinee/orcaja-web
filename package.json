@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "admin:migrate-trial-dates": "node scripts/migrateTrialDates.cjs",
     "firebase:emulators": "firebase emulators:start",
     "firebase:deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage",
     "preview": "vite preview"

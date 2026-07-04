@@ -10,7 +10,7 @@ import LoginPage from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import BlockedPage from './components/BlockedPage';
 import { auth, db, firebaseReady, missingFirebaseVars } from './firebase';
-import { ensureTenantProfile } from './profileUtils';
+import { ensureTenantProfile, getTenantBlockReason, hasTenantAccess } from './profileUtils';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -33,7 +33,7 @@ const RequireActiveTenant = ({ children, session, profile }) => {
   if (profile.role === 'admin') {
     return <Navigate to="/admin" replace />;
   }
-  if (!['trialing', 'active'].includes(profile.status)) {
+  if (!hasTenantAccess(profile)) {
     return <Navigate to="/bloqueado" replace />;
   }
   return children;
@@ -148,8 +148,20 @@ export default function App() {
     <div className="app-shell">
       <div className="app-wrapper">
         <Routes>
-          <Route path="/login" element={!session ? <LoginPage /> : (profile?.role === 'admin' ? <Navigate to="/admin" replace /> : <Navigate to="/" replace />)} />
-          <Route path="/bloqueado" element={session && profile?.status === 'blocked' ? <BlockedPage /> : <Navigate to="/" replace />} />
+          <Route
+            path="/login"
+            element={!session ? <LoginPage /> : (
+              profile?.role === 'admin'
+                ? <Navigate to="/admin" replace />
+                : profile && !hasTenantAccess(profile)
+                  ? <Navigate to="/bloqueado" replace />
+                  : <Navigate to="/" replace />
+            )}
+          />
+          <Route
+            path="/bloqueado"
+            element={session && getTenantBlockReason(profile) ? <BlockedPage profile={profile} /> : <Navigate to="/" replace />}
+          />
           
           {/* Rotas do Super Admin */}
           <Route path="/admin" element={<RequireAdmin session={session} profile={profile}><AdminDashboard /></RequireAdmin>} />

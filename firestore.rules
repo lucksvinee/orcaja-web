@@ -33,11 +33,23 @@ service cloud.firestore {
       return get(profilePath(userId)).data;
     }
 
+    function isTrialActive(userId) {
+      return profile(userId).status == 'trialing'
+        && profile(userId).trial_ends_at is timestamp
+        && profile(userId).trial_ends_at > request.time;
+    }
+
+    function validNewTrialEnd() {
+      return request.resource.data.trial_ends_at is timestamp
+        && request.resource.data.trial_ends_at > request.time
+        && request.resource.data.trial_ends_at.toMillis() <= request.time.toMillis() + 1296000000;
+    }
+
     function isTenantActive(userId) {
       return signedIn()
         && exists(profilePath(userId))
         && profile(userId).role == 'tenant'
-        && profile(userId).status in ['trialing', 'active'];
+        && (profile(userId).status == 'active' || isTrialActive(userId));
     }
 
     function ownsExistingData() {
@@ -65,7 +77,9 @@ service cloud.firestore {
         && userId == uid()
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.role == 'tenant'
-        && request.resource.data.status == 'trialing';
+        && request.resource.data.status == 'trialing'
+        && request.resource.data.plan == 'trial'
+        && validNewTrialEnd();
 
       allow update: if signedIn()
         && userId == uid()

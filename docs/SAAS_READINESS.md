@@ -24,7 +24,7 @@ O projeto agora tem uma base para SaaS comercial:
   role: 'tenant' | 'admin',
   status: 'trialing' | 'active' | 'blocked' | 'cancelled',
   plan: 'trial' | 'starter' | 'pro' | 'business',
-  trial_ends_at: string,
+  trial_ends_at: Timestamp,
   created_at: string,
   updated_at: string
 }
@@ -104,9 +104,11 @@ Guarda a tabela de preços personalizada de cada prestador sem alterar o catálo
 
 ## Politica operacional sugerida
 
-- `trialing`: acesso liberado por 14 dias.
+- `trialing`: acesso liberado ate `trial_ends_at`. Ao expirar, o app mostra aviso de pagamento e as Firestore Rules bloqueiam leitura/escrita dos dados do tenant.
 - `active`: cliente pagante.
 - `blocked`: inadimplente ou bloqueio administrativo.
 - `cancelled`: contrato encerrado, acesso desativado.
 
 Nunca promova usuario para admin pelo frontend. Use Firebase Admin SDK em ambiente controlado.
+
+Para projetos que ja tinham perfis `trialing` com `trial_ends_at` em string, execute `npm run admin:migrate-trial-dates` uma vez antes de publicar as novas Firestore Rules.

@@ -3,6 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
+import { getProfileDate, getTrialEndsAtFromProfile, isTrialExpired } from '../profileUtils';
+
+const formatDate = (value) => {
+  const date = getProfileDate(value);
+  if (!date) return 'Não informado';
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(date);
+};
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -17,7 +29,11 @@ export default function AdminDashboard() {
       querySnapshot.forEach((docSnap) => {
         profilesList.push({ id: docSnap.id, ...docSnap.data() });
       });
-      profilesList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      profilesList.sort((a, b) => {
+        const createdAtA = getProfileDate(a.created_at)?.getTime() || 0;
+        const createdAtB = getProfileDate(b.created_at)?.getTime() || 0;
+        return createdAtB - createdAtA;
+      });
       setProfiles(profilesList);
     } catch (error) {
       console.error('Erro ao buscar perfis:', error);
@@ -44,7 +60,9 @@ export default function AdminDashboard() {
     }
   };
 
-  const getStatusLabel = (status) => {
+  const getStatusLabel = (profile) => {
+    if (isTrialExpired(profile)) return 'TRIAL EXPIRADO';
+
     const labels = {
       active: 'ATIVO',
       trialing: 'TRIAL',
@@ -52,13 +70,14 @@ export default function AdminDashboard() {
       cancelled: 'CANCELADO'
     };
 
-    return labels[status] || 'INDEFINIDO';
+    return labels[profile.status] || 'INDEFINIDO';
   };
 
-  const getStatusClass = (status) => {
-    if (status === 'active') return 'bg-emerald-100 text-emerald-700';
-    if (status === 'trialing') return 'bg-blue-100 text-blue-700';
-    if (status === 'cancelled') return 'bg-slate-200 text-slate-700';
+  const getStatusClass = (profile) => {
+    if (isTrialExpired(profile)) return 'bg-red-100 text-red-700';
+    if (profile.status === 'active') return 'bg-emerald-100 text-emerald-700';
+    if (profile.status === 'trialing') return 'bg-blue-100 text-blue-700';
+    if (profile.status === 'cancelled') return 'bg-slate-200 text-slate-700';
     return 'bg-red-100 text-red-700';
   };
 
@@ -109,6 +128,7 @@ export default function AdminDashboard() {
                   <th className="p-4">Usuário / Email</th>
                   <th className="p-4">Papel (Role)</th>
                   <th className="p-4">Data de Cadastro</th>
+                  <th className="p-4">Trial</th>
                   <th className="p-4">Status</th>
                   <th className="p-4 text-right">Ação</th>
                 </tr>
@@ -126,11 +146,14 @@ export default function AdminDashboard() {
                       </span>
                     </td>
                     <td className="p-4 text-slate-600">
-                      {new Date(profile.created_at).toLocaleDateString('pt-BR')}
+                      {formatDate(profile.created_at)}
+                    </td>
+                    <td className="p-4 text-slate-600">
+                      {profile.role === 'admin' ? '-' : formatDate(getTrialEndsAtFromProfile(profile))}
                     </td>
                     <td className="p-4">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusClass(profile.status)}`}>
-                        {getStatusLabel(profile.status)}
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusClass(profile)}`}>
+                        {getStatusLabel(profile)}
                       </span>
                     </td>
                     <td className="p-4 text-right space-x-2">
@@ -155,7 +178,7 @@ export default function AdminDashboard() {
                 ))}
                 {profiles.length === 0 && (
                   <tr>
-                    <td colSpan="5" className="p-8 text-center text-slate-500">Nenhum perfil encontrado.</td>
+                    <td colSpan="6" className="p-8 text-center text-slate-500">Nenhum perfil encontrado.</td>
                   </tr>
                 )}
               </tbody>
