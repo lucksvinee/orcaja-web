@@ -8,6 +8,13 @@ import {
 } from 'firebase/auth';
 import { ensureTenantProfile } from '../profileUtils';
 
+const MIN_PASSWORD_LENGTH = 8;
+
+const getResetActionSettings = () => ({
+  url: `${window.location.origin}/login`,
+  handleCodeInApp: false
+});
+
 const getFriendlyAuthError = (error) => {
   const messages = {
     'auth/email-already-in-use': 'Esse e-mail já tem uma conta. Clique em Entrar ou use Esqueci minha senha.',
@@ -17,7 +24,7 @@ const getFriendlyAuthError = (error) => {
     'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos e tente novamente.',
     'auth/user-disabled': 'Esta conta foi desativada. Entre em contato com o suporte.',
     'auth/user-not-found': 'Conta não encontrada. Confira o e-mail ou crie uma conta.',
-    'auth/weak-password': 'A senha deve ter pelo menos 6 caracteres.',
+    'auth/weak-password': `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`,
     'auth/wrong-password': 'Senha incorreta.'
   };
 
@@ -58,8 +65,8 @@ export default function Login() {
       return;
     }
 
-    if (senha.length < 6) {
-      setErro('A senha deve ter pelo menos 6 caracteres.');
+    if (senha.length < MIN_PASSWORD_LENGTH) {
+      setErro(`A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
       return;
     }
 
@@ -88,10 +95,14 @@ export default function Login() {
     setMsg('');
 
     try {
-      await sendPasswordResetEmail(auth, email.trim());
-      setMsg('Enviamos um link de recuperação para o seu e-mail.');
+      await sendPasswordResetEmail(auth, email.trim(), getResetActionSettings());
+      setMsg('Se houver uma conta com esse e-mail, enviaremos um link de recuperação.');
     } catch (error) {
-      setErro(getFriendlyAuthError(error));
+      if (error?.code === 'auth/user-not-found') {
+        setMsg('Se houver uma conta com esse e-mail, enviaremos um link de recuperação.');
+      } else {
+        setErro(getFriendlyAuthError(error));
+      }
     }
     setLoading(false);
   };

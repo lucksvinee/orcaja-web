@@ -4,6 +4,7 @@ import { auth, db } from '../firebase';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { getProfileDate, getTrialEndsAtFromProfile, isTrialExpired } from '../profileUtils';
+import PasswordSecurityModal from './PasswordSecurityModal';
 
 const formatDate = (value) => {
   const date = getProfileDate(value);
@@ -20,6 +21,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   const fetchProfiles = async () => {
     setLoading(true);
@@ -109,9 +111,18 @@ export default function AdminDashboard() {
           <h1 className="text-xl font-bold">👑 Super Admin - OrcaJá</h1>
           <p className="text-xs text-slate-400">Gestão de Inquilinos (SaaS)</p>
         </div>
-        <button onClick={handleLogout} className="bg-slate-700 hover:bg-slate-800 px-4 py-2 rounded text-sm font-semibold">
-          Sair
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPasswordModal(true)}
+            className="rounded bg-slate-700 px-4 py-2 text-sm font-semibold hover:bg-slate-800"
+          >
+            Senha
+          </button>
+          <button onClick={handleLogout} className="rounded bg-slate-700 px-4 py-2 text-sm font-semibold hover:bg-slate-800">
+            Sair
+          </button>
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto p-6">
@@ -186,6 +197,10 @@ export default function AdminDashboard() {
           </div>
         </div>
       </main>
+
+      {showPasswordModal && (
+        <PasswordSecurityModal onClose={() => setShowPasswordModal(false)} />
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import logo from '../assets/scarface-logo.png';
 import { auth } from '../firebase';
 import { useOrcamentos } from '../useOrcamentos';
 import { useClientes } from '../useClientes';
+import PasswordSecurityModal from './PasswordSecurityModal';
 
 const statusOptions = [
   { value: 'todos', label: 'Todos' },
@@ -33,6 +34,7 @@ export default function Dashboard() {
   const { clientes } = useClientes();
   const [statusFilter, setStatusFilter] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const userEmail = auth.currentUser?.email?.split('@')[0] || 'Usuário';
 
   const clientesById = useMemo(() => {
@@ -145,6 +147,13 @@ export default function Dashboard() {
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-700"
               >
                 Novo orçamento
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPasswordModal(true)}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-800"
+              >
+                Senha
               </button>
               <button
                 type="button"
@@ -322,6 +331,10 @@ export default function Dashboard() {
           </aside>
         </section>
       </main>
+
+      {showPasswordModal && (
+        <PasswordSecurityModal onClose={() => setShowPasswordModal(false)} />
+      )}
     </div>
   );
 }
