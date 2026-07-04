@@ -98,7 +98,7 @@ export default defineConfig({
         short_name: 'OrcaJa',
         description: 'Aplicativo de Orçamentos',
         id: '/',
-        start_url: '/',
+        start_url: '/?source=pwa',
         scope: '/',
         display: 'standalone',
         background_color: '#ffffff',
@@ -111,13 +111,19 @@ export default defineConfig({
             src: 'pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
           },
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       }

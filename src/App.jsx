@@ -9,6 +9,7 @@ import NovoOrcamentoPage from './components/NovoOrcamento';
 import LoginPage from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import BlockedPage from './components/BlockedPage';
+import PwaInstallPrompt from './components/PwaInstallPrompt';
 import { auth, db, firebaseReady, missingFirebaseVars } from './firebase';
 import { ensureTenantProfile, getTenantBlockReason, hasTenantAccess } from './profileUtils';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -174,6 +175,7 @@ export default function App() {
           <Route path="/orcamento/novo/:clienteId" element={<RequireActiveTenant session={session} profile={profile}><NovoOrcamentoPage /></RequireActiveTenant>} />
           <Route path="/orcamento/editar/:orcamentoId" element={<RequireActiveTenant session={session} profile={profile}><NovoOrcamentoPage /></RequireActiveTenant>} />
         </Routes>
+        <PwaInstallPrompt />
       </div>
     </div>
   );
