@@ -12,12 +12,29 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const functions = getFunctions(app);
+const requiredFirebaseVars = [
+  ['VITE_FIREBASE_API_KEY', firebaseConfig.apiKey],
+  ['VITE_FIREBASE_AUTH_DOMAIN', firebaseConfig.authDomain],
+  ['VITE_FIREBASE_PROJECT_ID', firebaseConfig.projectId],
+  ['VITE_FIREBASE_STORAGE_BUCKET', firebaseConfig.storageBucket],
+  ['VITE_FIREBASE_MESSAGING_SENDER_ID', firebaseConfig.messagingSenderId],
+  ['VITE_FIREBASE_APP_ID', firebaseConfig.appId],
+];
+
+export const missingFirebaseVars = requiredFirebaseVars
+  .filter(([, value]) => !value)
+  .map(([key]) => key);
+
+export const firebaseReady = missingFirebaseVars.length === 0;
+
+const app = firebaseReady ? initializeApp(firebaseConfig) : null;
+export const auth = app ? getAuth(app) : null;
+export const db = app ? getFirestore(app) : null;
+export const functions = app ? getFunctions(app) : null;
 
 if (
+  firebaseReady
+  &&
   import.meta.env.DEV
   && import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true'
   && !globalThis.__ORCAJA_FIREBASE_EMULATORS_CONNECTED__

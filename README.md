@@ -23,7 +23,6 @@ npm run dev
 ## Scripts
 
 ```bash
-npm test
 npm run lint
 npm run build
 npm run firebase:emulators

@@ -14,6 +14,17 @@ service cloud.firestore {
       return signedIn() && request.auth.token.admin == true;
     }
 
+    function isAdminProfile() {
+      return signedIn()
+        && exists(profilePath(uid()))
+        && profile(uid()).role == 'admin'
+        && profile(uid()).status == 'active';
+    }
+
+    function isAdmin() {
+      return isAdminClaim() || isAdminProfile();
+    }
+
     function profilePath(userId) {
       return /databases/$(database)/documents/profiles/$(userId);
     }
@@ -47,8 +58,8 @@ service cloud.firestore {
     }
 
     match /profiles/{userId} {
-      allow get: if signedIn() && (userId == uid() || isAdminClaim());
-      allow list: if isAdminClaim();
+      allow get: if signedIn() && (userId == uid() || isAdmin());
+      allow list: if isAdmin();
 
       allow create: if signedIn()
         && userId == uid()
@@ -65,15 +76,15 @@ service cloud.firestore {
           'updated_at'
         ])
         || (
-          isAdminClaim()
+          isAdmin()
           && validProfileStatus(request.resource.data.status)
         );
 
-      allow delete: if isAdminClaim();
+      allow delete: if isAdmin();
     }
 
     match /company_profiles/{userId} {
-      allow read: if signedIn() && (userId == uid() || isAdminClaim());
+      allow read: if signedIn() && (userId == uid() || isAdmin());
       allow create: if userId == uid()
         && isTenantActive(uid())
         && ownsIncomingData();
@@ -82,11 +93,11 @@ service cloud.firestore {
         && isTenantActive(uid())
         && keepsOwner()
         && request.resource.data.user_id == uid();
-      allow delete: if isAdminClaim();
+      allow delete: if isAdmin();
     }
 
     match /catalog_overrides/{userId} {
-      allow read: if signedIn() && (userId == uid() || isAdminClaim());
+      allow read: if signedIn() && (userId == uid() || isAdmin());
       allow create: if signedIn()
         && userId == uid()
         && isTenantActive(uid())
@@ -100,7 +111,7 @@ service cloud.firestore {
     }
 
     match /clientes/{clienteId} {
-      allow read: if isAdminClaim() || (ownsExistingData() && isTenantActive(uid()));
+      allow read: if isAdmin() || (ownsExistingData() && isTenantActive(uid()));
       allow create: if ownsIncomingData() && isTenantActive(uid());
       allow update: if ownsExistingData()
         && isTenantActive(uid())
@@ -110,7 +121,7 @@ service cloud.firestore {
     }
 
     match /orcamentos/{orcamentoId} {
-      allow read: if isAdminClaim() || (ownsExistingData() && isTenantActive(uid()));
+      allow read: if isAdmin() || (ownsExistingData() && isTenantActive(uid()));
       allow create: if ownsIncomingData() && isTenantActive(uid());
       allow update: if ownsExistingData()
         && isTenantActive(uid())
@@ -131,7 +142,7 @@ service cloud.firestore {
     }
 
     match /usage/{userId} {
-      allow read: if signedIn() && (userId == uid() || isAdminClaim());
+      allow read: if signedIn() && (userId == uid() || isAdmin());
       allow write: if false;
     }
 

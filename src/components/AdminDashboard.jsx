@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, db, functions } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { httpsCallable } from 'firebase/functions';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -35,8 +34,10 @@ export default function AdminDashboard() {
   const toggleStatus = async (id, currentStatus) => {
     const newStatus = currentStatus === 'active' ? 'blocked' : 'active';
     try {
-      const setTenantStatus = httpsCallable(functions, 'setTenantStatus');
-      await setTenantStatus({ uid: id, status: newStatus });
+      await updateDoc(doc(db, 'profiles', id), {
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      });
       setProfiles(profiles.map(p => p.id === id ? { ...p, status: newStatus } : p));
     } catch (error) {
       alert('Erro ao atualizar status: ' + (error.message || 'Sem permissão'));
@@ -64,8 +65,10 @@ export default function AdminDashboard() {
   const deleteTenant = async (id) => {
     if (window.confirm('Tem certeza que deseja cancelar este cliente? O usuário perderá o acesso ao sistema.')) {
       try {
-        const setTenantStatus = httpsCallable(functions, 'setTenantStatus');
-        await setTenantStatus({ uid: id, status: 'cancelled' });
+        await updateDoc(doc(db, 'profiles', id), {
+          status: 'cancelled',
+          updated_at: new Date().toISOString()
+        });
         setProfiles(profiles.map(p => p.id === id ? { ...p, status: 'cancelled' } : p));
       } catch (error) {
         alert('Erro ao cancelar perfil: ' + (error.message || 'Sem permissão'));

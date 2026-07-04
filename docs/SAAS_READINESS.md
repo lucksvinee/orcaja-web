@@ -11,7 +11,7 @@ O projeto agora tem uma base para SaaS comercial:
 - Cloud Functions administrativas para status/plano/uso.
 - API serverless `/api/comparar-precos` para Vercel.
 - Emuladores configurados para desenvolvimento.
-- Testes unitarios para regras de calculo de orcamento.
+- Estrutura de regras de calculo separada em utilitarios reutilizaveis.
 - Calculadora de materiais para estimar metragem de cabo, eletroduto, caixas, disjuntores e mao de obra a partir do tipo de servico.
 
 ## Modelo de dados recomendado
