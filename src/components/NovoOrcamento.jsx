@@ -795,39 +795,39 @@ export default function NovoOrcamento() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gray-50">
       {/* HEADER */}
       <header className="sticky top-0 z-40 bg-slate-900 text-white shadow-lg">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="text-lg font-bold">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold">
               {orcamentoId ? `✏️ Editar Orçamento #${orcamentoExistente?.numero ? String(orcamentoExistente.numero).padStart(4, '0') : '...'}` : (resolvedClienteId && cliente ? `📋 ${cliente.nome}` : '📋 Novo Orçamento')}
               </h1>
-              <p className="text-xs text-slate-300">
+              <p className="truncate text-xs text-slate-300">
                 {resolvedClienteId && cliente ? `Cliente: ${cliente.telefone}` : 'Orçamento rápido'}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap lg:items-center lg:justify-end">
             <button
               onClick={gerarPDF}
               disabled={isGeneratingPDF}
-              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed px-4 py-2 text-sm font-semibold transition"
+              className="min-w-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-400 sm:px-4"
             >
               {isGeneratingPDF ? '⏳ Gerando...' : '📄 Gerar PDF'}
             </button>
             {cliente && (
               <button
                 onClick={enviarWhatsApp}
-                className="rounded-lg bg-emerald-50 hover:bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700 transition"
+                className="min-w-0 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 sm:px-4"
               >
                 WhatsApp
               </button>
             )}
             <button
               onClick={() => setShowModalCompanyDetails(true)}
-              className="rounded-lg bg-slate-700 hover:bg-slate-800 px-4 py-2 text-sm font-semibold transition"
+              className="min-w-0 rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold transition hover:bg-slate-800 sm:px-4"
             >
               ⚙️ Empresa
             </button>
@@ -835,23 +835,23 @@ export default function NovoOrcamento() {
               <button
                 onClick={salvarOrcamento}
                 disabled={isGeneratingPDF}
-                className="rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed px-4 py-2 text-sm font-semibold transition"
+                className="min-w-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 sm:px-4"
               >
                 💾 Salvar
               </button>
             )}
             <button
               onClick={() => navigate(-1)}
-              className="rounded-lg border border-slate-400 bg-slate-800 hover:bg-slate-700 px-4 py-2 text-sm transition"
+              className="min-w-0 rounded-lg border border-slate-400 bg-slate-800 px-3 py-2 text-sm transition hover:bg-slate-700 sm:px-4"
             >
               ← Voltar
             </button>
-            <span className="bg-blue-600 text-xs px-3 py-1 rounded-full font-semibold">RASCUNHO</span>
+            <span className="flex min-w-0 items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold sm:rounded-full sm:py-1">RASCUNHO</span>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6">
         <section className="grid gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-bold uppercase text-slate-500">Cliente</p>
@@ -946,22 +946,22 @@ export default function NovoOrcamento() {
                 Nada encontrado no catálogo. Use os botões manuais para criar um item personalizado.
               </div>
             ) : filteredCatalog.slice(0, 9).map(item => (
-              <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div key={item.id} className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold uppercase text-slate-500">
                       {item.categoria}
                     </span>
-                    <h3 className="mt-2 font-bold text-slate-900">{item.nome || item.descricao}</h3>
+                    <h3 className="mt-2 break-words font-bold text-slate-900">{item.nome || item.descricao}</h3>
                     {item.descricao && item.nome && (
-                      <p className="mt-1 text-sm text-slate-500">{item.descricao}</p>
+                      <p className="mt-1 break-words text-sm text-slate-500">{item.descricao}</p>
                     )}
                   </div>
                 </div>
 
                 {catalogMode === 'materiais' && (
                   <div className="mt-3 space-y-3">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-3">
                       <label className="text-xs font-semibold text-slate-600">
                         Qtd.
                         <input
@@ -995,7 +995,7 @@ export default function NovoOrcamento() {
                         />
                       </label>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
                       <button
                         type="button"
                         onClick={() => saveCatalogPrice('materiais', item, {
@@ -1044,7 +1044,7 @@ export default function NovoOrcamento() {
                         />
                       </label>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
                       <button
                         type="button"
                         onClick={() => saveCatalogPrice('servicos', item, {
@@ -1141,15 +1141,15 @@ export default function NovoOrcamento() {
                         setExpandedMaterial(expandedMaterial === item.id ? null : item.id);
                       }
                     }}
-                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition"
+                    className="flex w-full min-w-0 items-center justify-between px-4 py-3 transition hover:bg-slate-50"
                   >
-                    <div className="text-left flex-1">
-                      <p className="font-semibold text-slate-900 text-sm">{item.nome}</p>
+                    <div className="min-w-0 flex-1 text-left">
+                      <p className="break-words text-sm font-semibold text-slate-900">{item.nome}</p>
                       <p className="text-xs text-slate-500 mt-1">
                         {item.qtd} un × R$ {item.precoVenda.toFixed(2).replace('.', ',')} = <strong>R$ {(item.qtd * item.precoVenda).toFixed(2).replace('.', ',')}</strong>
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="shrink-0 text-right">
                       <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1">
                         <button 
                           onClick={(e) => { e.stopPropagation(); alteraQtdMaterial(item.id, -1); }}
@@ -1166,13 +1166,13 @@ export default function NovoOrcamento() {
                         </button>
                       </div>
                     </div>
-                    <span className="text-xl text-slate-400 ml-2">{expandedMaterial === item.id ? '▼' : '▶'}</span>
+                    <span className="ml-2 shrink-0 text-xl text-slate-400">{expandedMaterial === item.id ? '▼' : '▶'}</span>
                   </div>
 
                   {/* VISTA EXPANDIDA */}
                   {expandedMaterial === item.id && (
                     <div className="border-t border-slate-200 px-4 py-3 bg-slate-50 space-y-3">
-                      <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                         <div>
                           <label className="text-xs text-slate-500">Nome</label>
                           <input 
@@ -1249,14 +1249,14 @@ export default function NovoOrcamento() {
           ) : (
             <div className="space-y-2">
               {maoDeObra.map(item => (
-                <div key={item.id} className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 flex items-center justify-between hover:shadow-md transition">
-                  <div className="flex-1">
-                    <p className="font-semibold text-slate-900 text-sm">{item.descricao}</p>
+                <div key={item.id} className="flex min-w-0 flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-semibold text-slate-900">{item.descricao}</p>
                     <p className="text-xs text-slate-500 mt-1">
                       {item.horas} h × R$ {item.valorHora.toFixed(2).replace('.', ',')} = <strong>R$ {(item.horas * item.valorHora).toFixed(2).replace('.', ',')}</strong>
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 ml-4">
+                  <div className="flex shrink-0 items-center gap-2 sm:ml-4">
                     <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-1">
                       <button 
                         onClick={() => alteraHoras(item.id, -1)}
@@ -1286,19 +1286,19 @@ export default function NovoOrcamento() {
         </div>
 
         {/* RESUMO */}
-        <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg p-6 shadow-lg">
-          <div className="grid grid-cols-3 gap-4">
-            <div>
+        <div className="rounded-lg bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white shadow-lg">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="min-w-0">
               <p className="text-xs uppercase text-slate-300">Materiais</p>
-              <p className="mt-2 text-2xl font-black">R$ {totalMateriais.toFixed(2).replace('.', ',')}</p>
+              <p className="mt-2 break-words text-2xl font-black">R$ {totalMateriais.toFixed(2).replace('.', ',')}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs uppercase text-slate-300">Serviços</p>
-              <p className="mt-2 text-2xl font-black">R$ {totalMaoDeObra.toFixed(2).replace('.', ',')}</p>
+              <p className="mt-2 break-words text-2xl font-black">R$ {totalMaoDeObra.toFixed(2).replace('.', ',')}</p>
             </div>
-            <div className="bg-blue-600 rounded-lg p-4">
+            <div className="min-w-0 rounded-lg bg-blue-600 p-4">
               <p className="text-xs uppercase text-blue-100">Total</p>
-              <p className="mt-2 text-3xl font-black">R$ {totalGeral.toFixed(2).replace('.', ',')}</p>
+              <p className="mt-2 break-words text-3xl font-black">R$ {totalGeral.toFixed(2).replace('.', ',')}</p>
             </div>
           </div>
         </div>

@@ -13,6 +13,8 @@ const isIosDevice = () => (
   || (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1)
 );
 
+const isAndroidDevice = () => /android/i.test(window.navigator.userAgent);
+
 const wasRecentlyDismissed = () => {
   try {
     const dismissedAt = Number(window.localStorage.getItem(DISMISS_KEY));
@@ -27,7 +29,7 @@ const wasRecentlyDismissed = () => {
 
 export default function PwaInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [showIosHint] = useState(() => (
+  const [manualInstallHint, setManualInstallHint] = useState(() => (
     !isStandaloneMode()
     && !wasRecentlyDismissed()
     && isIosDevice()
@@ -39,17 +41,27 @@ export default function PwaInstallPrompt() {
   ));
 
   useEffect(() => {
-    if (isStandaloneMode() || wasRecentlyDismissed() || showIosHint) {
+    if (isStandaloneMode() || wasRecentlyDismissed() || isIosDevice()) {
       return undefined;
     }
 
+    const fallbackTimer = window.setTimeout(() => {
+      if (isAndroidDevice()) {
+        setManualInstallHint(true);
+        setVisible(true);
+      }
+    }, 2500);
+
     const handleBeforeInstallPrompt = (event) => {
       event.preventDefault();
+      window.clearTimeout(fallbackTimer);
       setDeferredPrompt(event);
+      setManualInstallHint(false);
       setVisible(true);
     };
 
     const handleAppInstalled = () => {
+      window.clearTimeout(fallbackTimer);
       setDeferredPrompt(null);
       setVisible(false);
     };
@@ -58,10 +70,11 @@ export default function PwaInstallPrompt() {
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
+      window.clearTimeout(fallbackTimer);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
-  }, [showIosHint]);
+  }, []);
 
   const dismiss = () => {
     try {
@@ -81,9 +94,13 @@ export default function PwaInstallPrompt() {
     setVisible(false);
   };
 
-  if (!visible || (!deferredPrompt && !showIosHint)) {
+  if (!visible || (!deferredPrompt && !manualInstallHint)) {
     return null;
   }
+
+  const manualMessage = isIosDevice()
+    ? 'No iPhone, abra Compartilhar e toque em Adicionar à Tela de Início.'
+    : 'Se o botão de instalação não aparecer, abra o menu do navegador e toque em Instalar app ou Adicionar à tela inicial.';
 
   return (
     <div className="fixed inset-x-0 bottom-4 z-50 px-4 print:hidden">
@@ -94,12 +111,10 @@ export default function PwaInstallPrompt() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold">Usar OrcaJá como app</p>
           <p className="mt-1 text-xs leading-5 text-slate-600">
-            {showIosHint
-              ? 'No iPhone, abra Compartilhar e toque em Adicionar à Tela de Início.'
-              : 'Instale no celular para abrir pela tela inicial.'}
+            {manualInstallHint ? manualMessage : 'Instale no celular para abrir pela tela inicial.'}
           </p>
           <div className="mt-3 flex gap-2">
-            {!showIosHint && (
+            {!manualInstallHint && (
               <button
                 type="button"
                 onClick={install}
