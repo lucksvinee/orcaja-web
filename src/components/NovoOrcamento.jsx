@@ -33,6 +33,15 @@ import {
   getOrcamentoStatusLabel,
   normalizeOrcamentoStatus
 } from '../orcamentoStatus';
+import {
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_COMPANY_TERMS,
+  buildPublicOrcamentoUrl,
+  createShareToken,
+  getDefaultValidUntil,
+  hexToRgb,
+  sanitizeHexColor,
+} from '../publicOrcamento';
 
 export default function NovoOrcamento() {
   const { clienteId: clienteIdParam, orcamentoId: orcamentoIdParam } = useParams();
@@ -108,6 +117,9 @@ export default function NovoOrcamento() {
   const [companyAddress, setCompanyAddress] = useState('');
   const [companyPhone, setCompanyPhone] = useState('');
   const [companyEmail, setCompanyEmail] = useState('');
+  const [companyAccentColor, setCompanyAccentColor] = useState(DEFAULT_ACCENT_COLOR);
+  const [companyTerms, setCompanyTerms] = useState(DEFAULT_COMPANY_TERMS);
+  const [publishingPublicLink, setPublishingPublicLink] = useState(false);
 
   const [showModalAI, setShowModalAI] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -399,6 +411,8 @@ export default function NovoOrcamento() {
             setCompanyAddress(data.company_address || '');
             setCompanyPhone(data.company_phone || '');
             setCompanyEmail(data.company_email || '');
+            setCompanyAccentColor(sanitizeHexColor(data.company_accent_color, DEFAULT_ACCENT_COLOR));
+            setCompanyTerms(data.company_terms || DEFAULT_COMPANY_TERMS);
           }
 
           const catalogRef = doc(db, 'catalog_overrides', user.uid);
@@ -432,6 +446,8 @@ export default function NovoOrcamento() {
         company_address: companyAddress,
         company_phone: companyPhone,
         company_email: companyEmail,
+        company_accent_color: sanitizeHexColor(companyAccentColor, DEFAULT_ACCENT_COLOR),
+        company_terms: companyTerms || DEFAULT_COMPANY_TERMS,
       }, { merge: true });
       setShowModalCompanyDetails(false);
       toast.success('Dados da empresa salvos com sucesso.');
@@ -452,7 +468,7 @@ export default function NovoOrcamento() {
       // --- Configurações de Estilo ---
       const primaryColor = [30, 41, 59]; // slate-800
       const secondaryColor = [71, 85, 105]; // slate-600
-      const accentColor = [37, 99, 235]; // blue-600
+      const accentColor = hexToRgb(companyAccentColor); // brand color
 
       const marginX = 15;
       const tableRowHeight = 8; // Height of each table row
@@ -664,9 +680,14 @@ export default function NovoOrcamento() {
       pdf.setFontSize(9);
       pdf.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
       pdf.text('Observações:', marginX, yPosition + 5);
-      pdf.text('1. Orçamento válido por 15 dias.', marginX, yPosition + 10);
-      pdf.text('2. Condições de pagamento a combinar.', marginX, yPosition + 15);
-      pdf.text('3. Valores sujeitos a alteração sem aviso prévio.', marginX, yPosition + 20);
+      String(companyTerms || DEFAULT_COMPANY_TERMS)
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .slice(0, 4)
+        .forEach((line, index) => {
+          pdf.text(`${index + 1}. ${line.replace(/^\d+\.\s*/, '')}`, marginX, yPosition + 10 + (index * 5));
+        });
 
       // --- Rodapé ---
       const totalPages = pdf.internal.getNumberOfPages();
@@ -709,16 +730,94 @@ export default function NovoOrcamento() {
 
   const buildShareMessage = () => {
     const numero = orcamentoExistente?.numero ? String(orcamentoExistente.numero).padStart(4, '0') : 'novo';
+    const publicUrl = orcamentoExistente?.public_url;
     const linhas = [
       `Olá, ${cliente?.nome || 'tudo bem'}!`,
       `${companyName || 'Nossa equipe'} preparou o orçamento #${numero}.`,
       `Materiais: R$ ${totalMateriais.toFixed(2).replace('.', ',')}`,
       `Serviços: R$ ${totalMaoDeObra.toFixed(2).replace('.', ',')}`,
       `Total: R$ ${totalGeral.toFixed(2).replace('.', ',')}`,
+      publicUrl ? `Aprove ou acompanhe por aqui: ${publicUrl}` : '',
       'O orçamento é válido por 15 dias. Posso tirar alguma dúvida?'
-    ];
+    ].filter(Boolean);
 
     return linhas.join('\n');
+  };
+
+  const publishApprovalLink = async () => {
+    if (!orcamentoId) {
+      toast.error('Salve o orçamento antes de gerar o link de aprovação.');
+      return;
+    }
+
+    if (!cliente) {
+      toast.error('Selecione um cliente antes de gerar o link.');
+      return;
+    }
+
+    const ownerId = userId || auth.currentUser?.uid;
+    if (!ownerId) {
+      toast.error('Usuário não autenticado.');
+      return;
+    }
+
+    setPublishingPublicLink(true);
+    try {
+      const now = new Date().toISOString();
+      const token = orcamentoExistente?.share_token || createShareToken();
+      const publicUrl = buildPublicOrcamentoUrl(token);
+      const currentOrcamentoStatus = normalizeOrcamentoStatus(orcamentoExistente?.status);
+      const statusToPublish = currentOrcamentoStatus === ORCAMENTO_STATUS.draft
+        ? ORCAMENTO_STATUS.sent
+        : currentOrcamentoStatus;
+
+      await setDoc(doc(db, 'public_orcamentos', token), {
+        user_id: ownerId,
+        orcamento_id: String(orcamentoId),
+        share_token: token,
+        public_url: publicUrl,
+        numero: orcamentoExistente?.numero || null,
+        status: statusToPublish,
+        cliente: {
+          nome: cliente.nome || 'Cliente',
+        },
+        company: {
+          name: companyName || 'Sua empresa',
+          address: companyAddress || '',
+          phone: companyPhone || '',
+          email: companyEmail || '',
+          accent_color: sanitizeHexColor(companyAccentColor, DEFAULT_ACCENT_COLOR),
+          terms: companyTerms || DEFAULT_COMPANY_TERMS,
+        },
+        itens: materiais,
+        servicos: maoDeObra,
+        total: totalGeral,
+        total_materiais: totalMateriais,
+        total_servicos: totalMaoDeObra,
+        valid_until: getDefaultValidUntil(),
+        published_at: orcamentoExistente?.published_at || now,
+        updated_at: now,
+      }, { merge: true });
+
+      await updateOrcamento(orcamentoId, {
+        share_token: token,
+        public_url: publicUrl,
+        public_updated_at: now,
+        status: statusToPublish,
+      });
+
+      try {
+        await navigator.clipboard.writeText(publicUrl);
+        toast.success('Link de aprovação copiado.');
+      } catch {
+        toast.success('Link de aprovação gerado.');
+      }
+    } catch (error) {
+      console.error('Erro ao publicar link de aprovação:', error);
+      toast.error(`Erro ao gerar link: ${error.message || 'Tente novamente'}`);
+    } finally {
+      setPublishingPublicLink(false);
+    }
   };
 
   const enviarWhatsApp = () => {
@@ -892,6 +991,16 @@ export default function NovoOrcamento() {
                 className="min-w-0 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 sm:px-4"
               >
                 WhatsApp
+              </button>
+            )}
+            {cliente && orcamentoId && (
+              <button
+                type="button"
+                onClick={publishApprovalLink}
+                disabled={publishingPublicLink}
+                className="min-w-0 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-gray-400 sm:px-4"
+              >
+                {publishingPublicLink ? 'Publicando...' : 'Link'}
               </button>
             )}
             <button
@@ -1788,6 +1897,34 @@ export default function NovoOrcamento() {
                 placeholder="Email de contato"
                 className="w-full p-2 rounded border border-slate-200 text-sm"
               />
+              <label className="block text-sm font-bold text-slate-700">
+                Cor da proposta
+                <div className="mt-1 flex gap-2">
+                  <input
+                    value={sanitizeHexColor(companyAccentColor, DEFAULT_ACCENT_COLOR)}
+                    onChange={e => setCompanyAccentColor(e.target.value)}
+                    type="color"
+                    className="h-10 w-14 rounded border border-slate-200 bg-white p-1"
+                  />
+                  <input
+                    value={companyAccentColor}
+                    onChange={e => setCompanyAccentColor(e.target.value)}
+                    type="text"
+                    placeholder="#2563eb"
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  />
+                </div>
+              </label>
+              <label className="block text-sm font-bold text-slate-700">
+                Condições da proposta
+                <textarea
+                  value={companyTerms}
+                  onChange={e => setCompanyTerms(e.target.value)}
+                  rows={4}
+                  className="mt-1 w-full rounded border border-slate-200 p-2 text-sm"
+                  placeholder={DEFAULT_COMPANY_TERMS}
+                />
+              </label>
             </div>
             <div className="flex gap-2 mt-6">
               <button 

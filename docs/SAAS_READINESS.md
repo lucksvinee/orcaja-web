@@ -39,7 +39,9 @@ O projeto agora tem uma base para SaaS comercial:
   company_address: string,
   company_phone: string,
   company_email: string,
-  logo_path: string
+  logo_path: string,
+  company_accent_color: string,
+  company_terms: string
 }
 ```
 
@@ -67,6 +69,9 @@ O projeto agora tem uma base para SaaS comercial:
   servicos: array,
   total: number,
   status: 'rascunho' | 'enviado' | 'visualizado' | 'aprovado' | 'recusado' | 'concluído',
+  share_token: string,
+  public_url: string,
+  public_updated_at: string,
   revision_count: number,
   created_at: string,
   updated_at: string
@@ -101,6 +106,40 @@ Guarda um retrato anterior do orçamento antes de cada alteração, permitindo a
 
 Controla a numeração sequencial de orçamentos por prestador.
 
+### `public_orcamentos/{shareToken}`
+
+```js
+{
+  user_id: string,
+  orcamento_id: string,
+  share_token: string,
+  public_url: string,
+  numero: number,
+  status: 'enviado' | 'visualizado' | 'aprovado' | 'recusado' | 'concluído',
+  cliente: { nome: string },
+  company: {
+    name: string,
+    address: string,
+    phone: string,
+    email: string,
+    accent_color: string,
+    terms: string
+  },
+  itens: array,
+  servicos: array,
+  total: number,
+  total_materiais: number,
+  total_servicos: number,
+  valid_until: string,
+  published_at: string,
+  updated_at: string,
+  viewed_at: string,
+  responded_at: string
+}
+```
+
+Versão pública e segura da proposta. O prestador publica com login; o cliente acessa por token e só pode marcar como visualizado, aprovado ou recusado.
+
 ### `catalog_overrides/{uid}`
 
 ```js
@@ -122,9 +161,9 @@ Guarda a tabela de preços personalizada de cada prestador sem alterar o catálo
 
 1. Cobrança: integrar Stripe, Mercado Pago ou Asaas.
 2. Limites por plano: maximo de orcamentos, IA e usuarios.
-3. Link publico do orçamento: cliente aprova/recusa sem login.
-4. Upload de logo e personalizacao do PDF.
-5. Recuperacao de senha e verificacao de email.
+3. Pagamento online: link PIX/cartao e baixa automatica do status do tenant.
+4. Upload de logo usando Firebase Storage quando o Storage estiver ativo.
+5. Verificacao de email.
 6. Exportacao CSV/PDF dos dados do prestador. CSV de clientes e orcamentos ja disponivel no dashboard.
 7. Testes de Firestore Rules com Firebase Emulator.
 8. Monitoramento de erro: Sentry, Firebase Crashlytics Web alternativo ou logs estruturados.

@@ -83,6 +83,38 @@ service cloud.firestore {
       ];
     }
 
+    function validPublicOrcamentoData(publicId) {
+      return request.resource.data.user_id == uid()
+        && request.resource.data.share_token == publicId
+        && validOrcamentoStatus(request.resource.data.status);
+    }
+
+    function isPublicViewTransition() {
+      return resource.data.status == 'enviado'
+        && request.resource.data.status == 'visualizado'
+        && request.resource.data.viewed_at is string;
+    }
+
+    function isPublicDecisionTransition() {
+      return resource.data.status in ['enviado', 'visualizado']
+        && request.resource.data.status in ['aprovado', 'recusado']
+        && request.resource.data.responded_at is string;
+    }
+
+    function validPublicStatusUpdate() {
+      return request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'viewed_at',
+          'responded_at',
+          'updated_at'
+        ])
+        && request.resource.data.user_id == resource.data.user_id
+        && request.resource.data.orcamento_id == resource.data.orcamento_id
+        && request.resource.data.share_token == resource.data.share_token
+        && request.resource.data.updated_at is string
+        && (isPublicViewTransition() || isPublicDecisionTransition());
+    }
+
     function validCounterData(userId) {
       return request.resource.data.user_id == userId
         && request.resource.data.next_orcamento_number is int
@@ -197,11 +229,17 @@ service cloud.firestore {
     }
 
     match /public_orcamentos/{publicId} {
-      allow get: if resource.data.status == 'published';
+      allow get: if true;
       allow list: if false;
-      allow create, update: if signedIn()
-        && request.resource.data.user_id == uid()
-        && isTenantActive(uid());
+      allow create: if signedIn()
+        && isTenantActive(uid())
+        && validPublicOrcamentoData(publicId);
+      allow update: if (
+          signedIn()
+          && resource.data.user_id == uid()
+          && isTenantActive(uid())
+          && validPublicOrcamentoData(publicId)
+        ) || validPublicStatusUpdate();
       allow delete: if signedIn()
         && resource.data.user_id == uid()
         && isTenantActive(uid());

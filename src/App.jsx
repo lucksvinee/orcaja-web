@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import './App.css';
 
@@ -10,6 +10,7 @@ import NovoOrcamentoPage from './components/NovoOrcamento';
 import LoginPage from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import BlockedPage from './components/BlockedPage';
+import PublicOrcamentoPage from './components/PublicOrcamentoPage';
 import PwaInstallPrompt from './components/PwaInstallPrompt';
 import { auth, db, firebaseReady, missingFirebaseVars } from './firebase';
 import { ensureTenantProfile, getTenantBlockReason, hasTenantAccess } from './profileUtils';
@@ -91,9 +92,11 @@ const FirebaseSetupNotice = () => (
 );
 
 export default function App() {
+  const location = useLocation();
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(firebaseReady);
+  const isPublicProposal = location.pathname.startsWith('/proposta/');
 
   useEffect(() => {
     if (!firebaseReady) {
@@ -164,6 +167,7 @@ export default function App() {
             path="/bloqueado"
             element={session && getTenantBlockReason(profile) ? <BlockedPage profile={profile} /> : <Navigate to="/" replace />}
           />
+          <Route path="/proposta/:token" element={<PublicOrcamentoPage />} />
           
           {/* Rotas do Super Admin */}
           <Route path="/admin" element={<RequireAdmin session={session} profile={profile}><AdminDashboard /></RequireAdmin>} />
@@ -176,7 +180,7 @@ export default function App() {
           <Route path="/orcamento/novo/:clienteId" element={<RequireActiveTenant session={session} profile={profile}><NovoOrcamentoPage /></RequireActiveTenant>} />
           <Route path="/orcamento/editar/:orcamentoId" element={<RequireActiveTenant session={session} profile={profile}><NovoOrcamentoPage /></RequireActiveTenant>} />
         </Routes>
-        <PwaInstallPrompt />
+        {!isPublicProposal && <PwaInstallPrompt />}
         <Toaster
           position="top-center"
           gutter={10}

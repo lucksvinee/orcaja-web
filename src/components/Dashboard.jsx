@@ -134,6 +134,22 @@ export default function Dashboard() {
     }
   };
 
+  const copyPublicLink = async (orcamento, event) => {
+    event.stopPropagation();
+    if (!orcamento.public_url) {
+      toast.error('Gere o link dentro do orçamento primeiro.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(orcamento.public_url);
+      toast.success('Link de aprovação copiado.');
+    } catch {
+      window.open(orcamento.public_url, '_blank', 'noopener,noreferrer');
+      toast.success('Link aberto em nova aba.');
+    }
+  };
+
   const exportClientes = () => {
     downloadCsv('orcaja-clientes.csv', buildClientesCsvRows(clientes));
     toast.success('Clientes exportados em CSV.');
@@ -303,6 +319,15 @@ export default function Dashboard() {
                         >
                           WhatsApp
                         </button>
+                        {orcamento.public_url && (
+                          <button
+                            type="button"
+                            onClick={(event) => copyPublicLink(orcamento, event)}
+                            className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-700 hover:bg-cyan-100"
+                          >
+                            Link
+                          </button>
+                        )}
                         <select
                           value={normalizeOrcamentoStatus(orcamento.status)}
                           onChange={(event) => updateOrcamentoStatus(orcamento.id, event.target.value)}

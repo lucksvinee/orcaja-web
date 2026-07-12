@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { auth, db } from './firebase';
-import { collection, query, where, getDocs, deleteDoc, doc, runTransaction } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, deleteDoc, doc, runTransaction } from 'firebase/firestore';
 import { ORCAMENTO_STATUS, normalizeOrcamentoStatus } from './orcamentoStatus';
+import { getMostAdvancedStatus } from './publicOrcamento';
 
 export function useOrcamentos() {
   const [orcamentos, setOrcamentos] = useState([]);
@@ -22,8 +23,30 @@ export function useOrcamentos() {
       querySnapshot.forEach((docSnap) => {
         orcamentosList.push({ id: docSnap.id, ...docSnap.data() });
       });
-      orcamentosList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      setOrcamentos(orcamentosList);
+
+      const syncedOrcamentos = await Promise.all(orcamentosList.map(async (orcamento) => {
+        if (!orcamento.share_token) return orcamento;
+
+        try {
+          const publicSnap = await getDoc(doc(db, 'public_orcamentos', orcamento.share_token));
+          if (!publicSnap.exists()) return orcamento;
+
+          const publicData = publicSnap.data();
+          return {
+            ...orcamento,
+            status: getMostAdvancedStatus(orcamento.status, publicData.status),
+            public_status: publicData.status,
+            public_viewed_at: publicData.viewed_at || null,
+            public_responded_at: publicData.responded_at || null,
+          };
+        } catch (error) {
+          console.error('Erro ao sincronizar status publico:', error);
+          return orcamento;
+        }
+      }));
+
+      syncedOrcamentos.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setOrcamentos(syncedOrcamentos);
     } catch (error) {
       console.error('Erro ao buscar orçamentos:', error);
     } finally {
@@ -34,6 +57,8 @@ export function useOrcamentos() {
   useEffect(() => {
     // eslint-disable-next-line
     fetchOrcamentos();
+    const refreshInterval = window.setInterval(fetchOrcamentos, 60000);
+    return () => window.clearInterval(refreshInterval);
   }, [fetchOrcamentos]);
 
   const addOrcamento = useCallback(async (novoOrcamento) => {
