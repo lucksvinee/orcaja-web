@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { useOrcamentos } from '../useOrcamentos';
@@ -90,6 +90,9 @@ export default function NovoOrcamento() {
   const [catalogOverrides, setCatalogOverrides] = useState({ materiais: {}, servicos: {}, pacotes: {} });
   const [catalogDrafts, setCatalogDrafts] = useState({});
   const [savingCatalogItem, setSavingCatalogItem] = useState(null);
+  const [isCatalogCollapsed, setIsCatalogCollapsed] = useState(false);
+  const [catalogFeedback, setCatalogFeedback] = useState('');
+  const catalogFeedbackTimeoutRef = useRef(null);
   const [showMaterialCalculator, setShowMaterialCalculator] = useState(false);
   const [calculatorForm, setCalculatorForm] = useState({
     tipo: materialCalculatorTemplates[0].id,
@@ -111,6 +114,26 @@ export default function NovoOrcamento() {
   const [showRevisionHistory, setShowRevisionHistory] = useState(false);
   const [revisionHistory, setRevisionHistory] = useState([]);
   const [loadingRevisions, setLoadingRevisions] = useState(false);
+
+  const showCatalogFeedback = useCallback((message) => {
+    setCatalogFeedback(message);
+
+    if (catalogFeedbackTimeoutRef.current) {
+      window.clearTimeout(catalogFeedbackTimeoutRef.current);
+    }
+
+    catalogFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setCatalogFeedback('');
+    }, 2500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (catalogFeedbackTimeoutRef.current) {
+        window.clearTimeout(catalogFeedbackTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const gerarComIA = async () => {
     if (!aiPrompt) return;
@@ -190,6 +213,7 @@ export default function NovoOrcamento() {
 
     setNovoMaterial({ nome: '', qtd: 1, precoVenda: '', custo: '' });
     setShowModalMaterial(false);
+    showCatalogFeedback(`${novoMaterial.nome} adicionado aos materiais.`);
   };
 
   const handleAddServico = () => {
@@ -207,6 +231,7 @@ export default function NovoOrcamento() {
 
     setNovoServico({ descricao: '', horas: 1, valorHora: '' });
     setShowModalServico(false);
+    showCatalogFeedback(`${novoServico.descricao} adicionado aos serviços.`);
   };
 
   const addCatalogMaterial = (material) => {
@@ -221,6 +246,7 @@ export default function NovoOrcamento() {
         precoInternet: estimateInternetPrice(material.nome, material.precoVenda)
       }
     ]);
+    showCatalogFeedback(`${material.nome} adicionado aos materiais.`);
   };
 
   const addCatalogServico = (servico) => {
@@ -233,6 +259,7 @@ export default function NovoOrcamento() {
         valorHora: Number(servico.valorHora || 0)
       }
     ]);
+    showCatalogFeedback(`${servico.descricao} adicionado aos serviços.`);
   };
 
   const addCatalogPackage = (pacote) => {
@@ -271,6 +298,8 @@ export default function NovoOrcamento() {
         })
       ];
     });
+
+    showCatalogFeedback(`${pacote.nome} adicionado ao orçamento.`);
   };
 
   const updateCatalogDraft = (itemId, field, value) => {
@@ -808,6 +837,7 @@ export default function NovoOrcamento() {
     });
 
     setShowMaterialCalculator(false);
+    showCatalogFeedback('Cálculo adicionado ao orçamento.');
   };
 
   const catalogCategories = ['todos', ...new Set(catalogSource.map(item => item.categoria))];
@@ -921,219 +951,241 @@ export default function NovoOrcamento() {
               <p className="text-sm text-slate-500">Selecione materiais, serviços ou pacotes prontos e ajuste depois no orçamento.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {catalogModes.map(mode => (
-                <button
-                  key={mode.value}
-                  type="button"
-                  onClick={() => {
-                    setCatalogMode(mode.value);
-                    setCatalogCategory('todos');
-                  }}
-                  className={`rounded-lg px-3 py-2 text-sm font-bold transition ${
-                    catalogMode === mode.value
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {mode.label}
-                </button>
-              ))}
+              {!isCatalogCollapsed && catalogModes.map(mode => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    onClick={() => {
+                      setCatalogMode(mode.value);
+                      setCatalogCategory('todos');
+                    }}
+                    className={`rounded-lg px-3 py-2 text-sm font-bold transition ${
+                      catalogMode === mode.value
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              <button
+                type="button"
+                onClick={() => setIsCatalogCollapsed(prev => !prev)}
+                aria-expanded={!isCatalogCollapsed}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+              >
+                {isCatalogCollapsed ? 'Expandir' : 'Minimizar'}
+              </button>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px_auto_auto_auto]">
-            <input
-              value={catalogSearch}
-              onChange={e => setCatalogSearch(e.target.value)}
-              type="search"
-              placeholder="Buscar no catálogo..."
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <select
-              value={catalogCategory}
-              onChange={e => setCatalogCategory(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+          {catalogFeedback && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800"
             >
-              {catalogCategories.map(category => (
-                <option key={category} value={category}>
-                  {category === 'todos' ? 'Todas as categorias' : category}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => setShowModalMaterial(true)}
-              className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
-            >
-              Material manual
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowModalServico(true)}
-              className="rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100"
-            >
-              Serviço manual
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowMaterialCalculator(true)}
-              className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-100"
-            >
-              Calcular materiais
-            </button>
-          </div>
+              {catalogFeedback}
+            </div>
+          )}
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {filteredCatalog.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500 md:col-span-2 xl:col-span-3">
-                Nada encontrado no catálogo. Use os botões manuais para criar um item personalizado.
+          {!isCatalogCollapsed && (
+            <>
+              <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px_auto_auto_auto]">
+                <input
+                  value={catalogSearch}
+                  onChange={e => setCatalogSearch(e.target.value)}
+                  type="search"
+                  placeholder="Buscar no catálogo..."
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <select
+                  value={catalogCategory}
+                  onChange={e => setCatalogCategory(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {catalogCategories.map(category => (
+                    <option key={category} value={category}>
+                      {category === 'todos' ? 'Todas as categorias' : category}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowModalMaterial(true)}
+                  className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  Material manual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowModalServico(true)}
+                  className="rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100"
+                >
+                  Serviço manual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMaterialCalculator(true)}
+                  className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-100"
+                >
+                  Calcular materiais
+                </button>
               </div>
-            ) : filteredCatalog.slice(0, 9).map(item => (
-              <div key={item.id} className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold uppercase text-slate-500">
-                      {item.categoria}
-                    </span>
-                    <h3 className="mt-2 break-words font-bold text-slate-900">{item.nome || item.descricao}</h3>
-                    {item.descricao && item.nome && (
-                      <p className="mt-1 break-words text-sm text-slate-500">{item.descricao}</p>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {filteredCatalog.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500 md:col-span-2 xl:col-span-3">
+                    Nada encontrado no catálogo. Use os botões manuais para criar um item personalizado.
+                  </div>
+                ) : filteredCatalog.slice(0, 9).map(item => (
+                  <div key={item.id} className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold uppercase text-slate-500">
+                          {item.categoria}
+                        </span>
+                        <h3 className="mt-2 break-words font-bold text-slate-900">{item.nome || item.descricao}</h3>
+                        {item.descricao && item.nome && (
+                          <p className="mt-1 break-words text-sm text-slate-500">{item.descricao}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {catalogMode === 'materiais' && (
+                      <div className="mt-3 space-y-3">
+                        <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-3">
+                          <label className="text-xs font-semibold text-slate-600">
+                            Qtd.
+                            <input
+                              type="number"
+                              min="1"
+                              value={getCatalogDraftValue(item, 'qtd')}
+                              onChange={e => updateCatalogDraft(item.id, 'qtd', e.target.value)}
+                              className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
+                            />
+                          </label>
+                          <label className="text-xs font-semibold text-slate-600">
+                            Venda
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={getCatalogDraftValue(item, 'precoVenda')}
+                              onChange={e => updateCatalogDraft(item.id, 'precoVenda', e.target.value)}
+                              className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
+                            />
+                          </label>
+                          <label className="text-xs font-semibold text-slate-600">
+                            Custo
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={getCatalogDraftValue(item, 'custo')}
+                              onChange={e => updateCatalogDraft(item.id, 'custo', e.target.value)}
+                              className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
+                            />
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => saveCatalogPrice('materiais', item, {
+                              qtd: getCatalogDraftValue(item, 'qtd'),
+                              precoVenda: getCatalogDraftValue(item, 'precoVenda'),
+                              custo: getCatalogDraftValue(item, 'custo'),
+                            })}
+                            disabled={savingCatalogItem === item.id}
+                            className="flex-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
+                          >
+                            {savingCatalogItem === item.id ? 'Salvando...' : 'Salvar preço'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addCatalogMaterial(item)}
+                            className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                          >
+                            Adicionar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {catalogMode === 'servicos' && (
+                      <div className="mt-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="text-xs font-semibold text-slate-600">
+                            Horas
+                            <input
+                              type="number"
+                              min="1"
+                              value={getCatalogDraftValue(item, 'horas')}
+                              onChange={e => updateCatalogDraft(item.id, 'horas', e.target.value)}
+                              className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
+                            />
+                          </label>
+                          <label className="text-xs font-semibold text-slate-600">
+                            Valor/hora
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={getCatalogDraftValue(item, 'valorHora')}
+                              onChange={e => updateCatalogDraft(item.id, 'valorHora', e.target.value)}
+                              className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
+                            />
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => saveCatalogPrice('servicos', item, {
+                              horas: getCatalogDraftValue(item, 'horas'),
+                              valorHora: getCatalogDraftValue(item, 'valorHora'),
+                            })}
+                            disabled={savingCatalogItem === item.id}
+                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                          >
+                            {savingCatalogItem === item.id ? 'Salvando...' : 'Salvar valor'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addCatalogServico(item)}
+                            className="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800"
+                          >
+                            Adicionar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {catalogMode === 'pacotes' && (
+                      <div className="mt-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="rounded-lg bg-white p-2">
+                            <p className="text-xs text-slate-500">Materiais</p>
+                            <p className="font-black text-slate-900">{item.materiais.length}</p>
+                          </div>
+                          <div className="rounded-lg bg-white p-2">
+                            <p className="text-xs text-slate-500">Serviços</p>
+                            <p className="font-black text-slate-900">{item.servicos.length}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => addCatalogPackage(item)}
+                          className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                        >
+                          Adicionar pacote
+                        </button>
+                      </div>
                     )}
                   </div>
-                </div>
-
-                {catalogMode === 'materiais' && (
-                  <div className="mt-3 space-y-3">
-                    <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-3">
-                      <label className="text-xs font-semibold text-slate-600">
-                        Qtd.
-                        <input
-                          type="number"
-                          min="1"
-                          value={getCatalogDraftValue(item, 'qtd')}
-                          onChange={e => updateCatalogDraft(item.id, 'qtd', e.target.value)}
-                          className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
-                        />
-                      </label>
-                      <label className="text-xs font-semibold text-slate-600">
-                        Venda
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={getCatalogDraftValue(item, 'precoVenda')}
-                          onChange={e => updateCatalogDraft(item.id, 'precoVenda', e.target.value)}
-                          className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
-                        />
-                      </label>
-                      <label className="text-xs font-semibold text-slate-600">
-                        Custo
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={getCatalogDraftValue(item, 'custo')}
-                          onChange={e => updateCatalogDraft(item.id, 'custo', e.target.value)}
-                          className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
-                        />
-                      </label>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => saveCatalogPrice('materiais', item, {
-                          qtd: getCatalogDraftValue(item, 'qtd'),
-                          precoVenda: getCatalogDraftValue(item, 'precoVenda'),
-                          custo: getCatalogDraftValue(item, 'custo'),
-                        })}
-                        disabled={savingCatalogItem === item.id}
-                        className="flex-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
-                      >
-                        {savingCatalogItem === item.id ? 'Salvando...' : 'Salvar preço'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => addCatalogMaterial(item)}
-                        className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700"
-                      >
-                        Adicionar
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {catalogMode === 'servicos' && (
-                  <div className="mt-3 space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="text-xs font-semibold text-slate-600">
-                        Horas
-                        <input
-                          type="number"
-                          min="1"
-                          value={getCatalogDraftValue(item, 'horas')}
-                          onChange={e => updateCatalogDraft(item.id, 'horas', e.target.value)}
-                          className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
-                        />
-                      </label>
-                      <label className="text-xs font-semibold text-slate-600">
-                        Valor/hora
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={getCatalogDraftValue(item, 'valorHora')}
-                          onChange={e => updateCatalogDraft(item.id, 'valorHora', e.target.value)}
-                          className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-sm text-slate-900"
-                        />
-                      </label>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => saveCatalogPrice('servicos', item, {
-                          horas: getCatalogDraftValue(item, 'horas'),
-                          valorHora: getCatalogDraftValue(item, 'valorHora'),
-                        })}
-                        disabled={savingCatalogItem === item.id}
-                        className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-                      >
-                        {savingCatalogItem === item.id ? 'Salvando...' : 'Salvar valor'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => addCatalogServico(item)}
-                        className="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800"
-                      >
-                        Adicionar
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {catalogMode === 'pacotes' && (
-                  <div className="mt-3 space-y-3">
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div className="rounded-lg bg-white p-2">
-                        <p className="text-xs text-slate-500">Materiais</p>
-                        <p className="font-black text-slate-900">{item.materiais.length}</p>
-                      </div>
-                      <div className="rounded-lg bg-white p-2">
-                        <p className="text-xs text-slate-500">Serviços</p>
-                        <p className="font-black text-slate-900">{item.servicos.length}</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => addCatalogPackage(item)}
-                      className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700"
-                    >
-                      Adicionar pacote
-                    </button>
-                  </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </section>
 
         {/* FILTRO E BUSCA ONLINE */}
