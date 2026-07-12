@@ -26,11 +26,17 @@ import {
   nextDraftState,
   nextNumericId,
 } from '../orcamentoUtils';
+import {
+  ORCAMENTO_STATUS,
+  getOrcamentoStatusClass,
+  getOrcamentoStatusLabel,
+  normalizeOrcamentoStatus
+} from '../orcamentoStatus';
 
 export default function NovoOrcamento() {
   const { clienteId: clienteIdParam, orcamentoId: orcamentoIdParam } = useParams();
   const navigate = useNavigate();
-  const { orcamentos, addOrcamento, updateOrcamento } = useOrcamentos();
+  const { orcamentos, addOrcamento, updateOrcamento, getOrcamentoRevisions } = useOrcamentos();
   const { clientes } = useClientes();
   
   const orcamentoId = orcamentoIdParam ? orcamentoIdParam : null;
@@ -102,6 +108,9 @@ export default function NovoOrcamento() {
   const [showModalAI, setShowModalAI] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [showRevisionHistory, setShowRevisionHistory] = useState(false);
+  const [revisionHistory, setRevisionHistory] = useState([]);
+  const [loadingRevisions, setLoadingRevisions] = useState(false);
 
   const gerarComIA = async () => {
     if (!aiPrompt) return;
@@ -685,6 +694,27 @@ export default function NovoOrcamento() {
     }
 
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(buildShareMessage())}`, '_blank', 'noopener,noreferrer');
+
+    if (orcamentoId && normalizeOrcamentoStatus(orcamentoExistente?.status) === ORCAMENTO_STATUS.draft) {
+      updateOrcamento(orcamentoId, { status: ORCAMENTO_STATUS.sent }).catch((error) => {
+        console.error('Erro ao marcar orçamento como enviado:', error);
+      });
+    }
+  };
+
+  const openRevisionHistory = async () => {
+    if (!orcamentoId) return;
+
+    setShowRevisionHistory(true);
+    setLoadingRevisions(true);
+    try {
+      const revisions = await getOrcamentoRevisions(orcamentoId);
+      setRevisionHistory(revisions);
+    } catch (error) {
+      alert('Erro ao carregar histórico: ' + (error.message || 'Tente novamente'));
+    } finally {
+      setLoadingRevisions(false);
+    }
   };
 
   const salvarOrcamento = async () => {
@@ -709,7 +739,7 @@ export default function NovoOrcamento() {
           itens: materiais,
           servicos: maoDeObra,
           total: totalGeral,
-          status: 'pendente'
+          status: ORCAMENTO_STATUS.draft
         });
         alert('Orçamento salvo com sucesso!');
           // Redireciona de forma silenciosa para o link da edição sem tirar o usuário da tela
@@ -794,6 +824,8 @@ export default function NovoOrcamento() {
       && text.includes(catalogSearch.toLowerCase());
   });
 
+  const currentStatus = normalizeOrcamentoStatus(orcamentoExistente?.status);
+
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gray-50">
       {/* HEADER */}
@@ -846,7 +878,18 @@ export default function NovoOrcamento() {
             >
               ← Voltar
             </button>
-            <span className="flex min-w-0 items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold sm:rounded-full sm:py-1">RASCUNHO</span>
+            {orcamentoId && (
+              <button
+                type="button"
+                onClick={openRevisionHistory}
+                className="min-w-0 rounded-lg border border-slate-500 bg-slate-800 px-3 py-2 text-sm font-semibold transition hover:bg-slate-700 sm:px-4"
+              >
+                Histórico
+              </button>
+            )}
+            <span className={`flex min-w-0 items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold sm:rounded-full sm:py-1 ${getOrcamentoStatusClass(currentStatus)}`}>
+              {getOrcamentoStatusLabel(currentStatus).toUpperCase()}
+            </span>
           </div>
         </div>
       </header>
@@ -1303,6 +1346,80 @@ export default function NovoOrcamento() {
           </div>
         </div>
       </main>
+
+      {/* MODAL HISTÓRICO DE VERSÕES */}
+      {showRevisionHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white p-5">
+              <div>
+                <p className="text-xs font-bold uppercase text-blue-600">Histórico</p>
+                <h3 className="text-lg font-black text-slate-900">Versões do orçamento</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Cada versão abaixo é um retrato salvo antes de uma alteração.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRevisionHistory(false)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="space-y-3 p-5">
+              {loadingRevisions ? (
+                <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">Carregando histórico...</p>
+              ) : revisionHistory.length === 0 ? (
+                <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+                  Este orçamento ainda não tem versões anteriores.
+                </p>
+              ) : revisionHistory.map((revision) => {
+                const snapshot = revision.snapshot || {};
+                const changedAt = revision.changed_at ? new Date(revision.changed_at).toLocaleString('pt-BR') : 'Data não informada';
+                const totalSnapshot = Number(snapshot.total || 0).toFixed(2).replace('.', ',');
+                const changedFields = (revision.changed_fields || []).join(', ') || 'campos do orçamento';
+
+                return (
+                  <div key={revision.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-black text-slate-900">
+                          Versão {revision.revision_number || '-'}
+                        </h4>
+                        <p className="mt-1 text-xs text-slate-500">{changedAt}</p>
+                      </div>
+                      <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold ${getOrcamentoStatusClass(snapshot.status)}`}>
+                        {getOrcamentoStatusLabel(snapshot.status)}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                      <div className="rounded-lg bg-white p-3">
+                        <p className="text-xs font-bold uppercase text-slate-500">Total anterior</p>
+                        <p className="mt-1 font-black text-slate-900">R$ {totalSnapshot}</p>
+                      </div>
+                      <div className="rounded-lg bg-white p-3">
+                        <p className="text-xs font-bold uppercase text-slate-500">Materiais</p>
+                        <p className="mt-1 font-black text-slate-900">{(snapshot.itens || []).length}</p>
+                      </div>
+                      <div className="rounded-lg bg-white p-3">
+                        <p className="text-xs font-bold uppercase text-slate-500">Serviços</p>
+                        <p className="mt-1 font-black text-slate-900">{(snapshot.servicos || []).length}</p>
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-xs text-slate-500">
+                      Alteração registrada em: {changedFields}.
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL MATERIAL */}
       {showModalMaterial && (

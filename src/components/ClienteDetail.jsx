@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useClientes } from '../useClientes';
 import { useOrcamentos } from '../useOrcamentos';
+import { getOrcamentoStatusClass, getOrcamentoStatusLabel } from '../orcamentoStatus';
 
 export default function ClienteDetail() {
   const { id } = useParams();
@@ -143,12 +144,8 @@ export default function ClienteDetail() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <h3 className="font-bold text-slate-900">Orçamento #{orcamento.numero ? String(orcamento.numero).padStart(4, '0') : orcamento.id.substring(0,5)}</h3>
-                            <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                              orcamento.status === 'aprovado' ? 'bg-emerald-100 text-emerald-700' :
-                              orcamento.status === 'rejeitado' ? 'bg-red-100 text-red-700' :
-                              'bg-blue-100 text-blue-700'
-                            }`}>
-                              {orcamento.status || 'pendente'}
+                            <span className={`text-xs px-2 py-1 rounded-full font-semibold ${getOrcamentoStatusClass(orcamento.status)}`}>
+                              {getOrcamentoStatusLabel(orcamento.status)}
                             </span>
                           </div>
                           <p className="text-sm text-slate-500 mt-1">

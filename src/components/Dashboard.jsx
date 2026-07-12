@@ -5,26 +5,24 @@ import { auth } from '../firebase';
 import { useOrcamentos } from '../useOrcamentos';
 import { useClientes } from '../useClientes';
 import PasswordSecurityModal from './PasswordSecurityModal';
+import { buildClientesCsvRows, buildOrcamentosCsvRows, downloadCsv } from '../exportUtils';
+import {
+  ORCAMENTO_STATUS,
+  ORCAMENTO_STATUS_OPTIONS,
+  getOrcamentoStatusClass,
+  getOrcamentoStatusLabel,
+  normalizeOrcamentoStatus
+} from '../orcamentoStatus';
 
 const statusOptions = [
   { value: 'todos', label: 'Todos' },
-  { value: 'pendente', label: 'Pendentes' },
-  { value: 'aprovado', label: 'Aprovados' },
-  { value: 'recusado', label: 'Recusados' },
-  { value: 'concluído', label: 'Concluídos' },
+  ...ORCAMENTO_STATUS_OPTIONS,
 ];
 
 const currency = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
   currency: 'BRL',
 });
-
-const getStatusClass = (status) => {
-  if (status === 'aprovado') return 'bg-emerald-100 text-emerald-700';
-  if (status === 'recusado') return 'bg-red-100 text-red-700';
-  if (status === 'concluído') return 'bg-blue-100 text-blue-700';
-  return 'bg-amber-100 text-amber-700';
-};
 
 const normalizePhone = (phone = '') => phone.replace(/\D/g, '');
 
@@ -55,9 +53,20 @@ export default function Dashboard() {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-    const approved = orcamentos.filter(o => o.status === 'aprovado');
-    const decided = orcamentos.filter(o => ['aprovado', 'recusado'].includes(o.status));
-    const pending = orcamentos.filter(o => (o.status || 'pendente') === 'pendente');
+    const approved = orcamentos.filter(o => [
+      ORCAMENTO_STATUS.approved,
+      ORCAMENTO_STATUS.completed
+    ].includes(normalizeOrcamentoStatus(o.status)));
+    const decided = orcamentos.filter(o => [
+      ORCAMENTO_STATUS.approved,
+      ORCAMENTO_STATUS.rejected,
+      ORCAMENTO_STATUS.completed
+    ].includes(normalizeOrcamentoStatus(o.status)));
+    const pending = orcamentos.filter(o => [
+      ORCAMENTO_STATUS.draft,
+      ORCAMENTO_STATUS.sent,
+      ORCAMENTO_STATUS.viewed
+    ].includes(normalizeOrcamentoStatus(o.status)));
     const monthApproved = approved.filter((o) => {
       const createdAt = new Date(o.created_at);
       return createdAt.getMonth() === currentMonth && createdAt.getFullYear() === currentYear;
@@ -74,7 +83,7 @@ export default function Dashboard() {
   }, [orcamentos, clientes]);
 
   const filteredOrcamentos = enrichedOrcamentos
-    .filter((orcamento) => statusFilter === 'todos' || (orcamento.status || 'pendente') === statusFilter)
+    .filter((orcamento) => statusFilter === 'todos' || normalizeOrcamentoStatus(orcamento.status) === statusFilter)
     .filter((orcamento) => {
       const haystack = [
         orcamento.cliente?.nome,
@@ -117,6 +126,18 @@ export default function Dashboard() {
     ].join('\n');
 
     window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+
+    if (normalizeOrcamentoStatus(orcamento.status) === ORCAMENTO_STATUS.draft) {
+      updateOrcamentoStatus(orcamento.id, ORCAMENTO_STATUS.sent);
+    }
+  };
+
+  const exportClientes = () => {
+    downloadCsv('orcaja-clientes.csv', buildClientesCsvRows(clientes));
+  };
+
+  const exportOrcamentos = () => {
+    downloadCsv('orcaja-orcamentos.csv', buildOrcamentosCsvRows(enrichedOrcamentos));
   };
 
   return (
@@ -147,6 +168,22 @@ export default function Dashboard() {
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-700"
               >
                 Novo orçamento
+              </button>
+              <button
+                type="button"
+                onClick={exportOrcamentos}
+                disabled={!orcamentos.length}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-800 disabled:opacity-50"
+              >
+                Exportar orçamentos
+              </button>
+              <button
+                type="button"
+                onClick={exportClientes}
+                disabled={!clientes.length}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-800 disabled:opacity-50"
+              >
+                Exportar clientes
               </button>
               <button
                 type="button"
@@ -240,8 +277,8 @@ export default function Dashboard() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="font-bold text-slate-900">{orcamento.cliente?.nome || 'Cliente removido'}</h2>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${getStatusClass(orcamento.status)}`}>
-                          {orcamento.status || 'pendente'}
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${getOrcamentoStatusClass(orcamento.status)}`}>
+                          {getOrcamentoStatusLabel(orcamento.status)}
                         </span>
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
@@ -263,15 +300,14 @@ export default function Dashboard() {
                           WhatsApp
                         </button>
                         <select
-                          value={orcamento.status || 'pendente'}
+                          value={normalizeOrcamentoStatus(orcamento.status)}
                           onChange={(event) => updateOrcamentoStatus(orcamento.id, event.target.value)}
                           onClick={(event) => event.stopPropagation()}
                           className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none"
                         >
-                          <option value="pendente">Pendente</option>
-                          <option value="aprovado">Aprovado</option>
-                          <option value="recusado">Recusado</option>
-                          <option value="concluído">Concluído</option>
+                          {ORCAMENTO_STATUS_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
                         </select>
                       </div>
                     </div>
@@ -287,10 +323,10 @@ export default function Dashboard() {
               <div className="mt-4 space-y-3 text-sm">
                 <button
                   type="button"
-                  onClick={() => setStatusFilter('pendente')}
+                  onClick={() => setStatusFilter(ORCAMENTO_STATUS.sent)}
                   className="w-full rounded-lg bg-amber-50 p-3 text-left font-semibold text-amber-800 hover:bg-amber-100"
                 >
-                  Cobrar resposta dos pendentes
+                  Cobrar resposta dos enviados
                 </button>
                 <button
                   type="button"

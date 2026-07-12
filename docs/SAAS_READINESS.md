@@ -66,11 +66,40 @@ O projeto agora tem uma base para SaaS comercial:
   itens: array,
   servicos: array,
   total: number,
-  status: 'pendente' | 'aprovado' | 'recusado' | 'concluido',
+  status: 'rascunho' | 'enviado' | 'visualizado' | 'aprovado' | 'recusado' | 'concluído',
+  revision_count: number,
   created_at: string,
   updated_at: string
 }
 ```
+
+### `orcamentos/{docId}/revisions/{revisionId}`
+
+```js
+{
+  user_id: string,
+  orcamento_id: string,
+  revision_number: number,
+  changed_at: string,
+  changed_by: string,
+  changed_fields: array,
+  snapshot: object
+}
+```
+
+Guarda um retrato anterior do orçamento antes de cada alteração, permitindo auditoria e comparação.
+
+### `tenant_counters/{uid}`
+
+```js
+{
+  user_id: string,
+  next_orcamento_number: number,
+  updated_at: string
+}
+```
+
+Controla a numeração sequencial de orçamentos por prestador.
 
 ### `catalog_overrides/{uid}`
 
@@ -96,7 +125,7 @@ Guarda a tabela de preços personalizada de cada prestador sem alterar o catálo
 3. Link publico do orçamento: cliente aprova/recusa sem login.
 4. Upload de logo e personalizacao do PDF.
 5. Recuperacao de senha e verificacao de email.
-6. Exportacao CSV/PDF dos dados do prestador.
+6. Exportacao CSV/PDF dos dados do prestador. CSV de clientes e orcamentos ja disponivel no dashboard.
 7. Testes de Firestore Rules com Firebase Emulator.
 8. Monitoramento de erro: Sentry, Firebase Crashlytics Web alternativo ou logs estruturados.
 9. Backup automatizado do Firestore.

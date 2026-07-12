@@ -69,6 +69,36 @@ service cloud.firestore {
       return status in ['trialing', 'active', 'blocked', 'cancelled'];
     }
 
+    function validOrcamentoStatus(status) {
+      return status in [
+        'rascunho',
+        'enviado',
+        'visualizado',
+        'aprovado',
+        'recusado',
+        'concluído',
+        'pendente',
+        'concluido',
+        'rejeitado'
+      ];
+    }
+
+    function validCounterData(userId) {
+      return request.resource.data.user_id == userId
+        && request.resource.data.next_orcamento_number is int
+        && request.resource.data.next_orcamento_number >= 1;
+    }
+
+    function orcamentoPath(orcamentoId) {
+      return /databases/$(database)/documents/orcamentos/$(orcamentoId);
+    }
+
+    function ownsOrcamento(orcamentoId) {
+      return signedIn()
+        && exists(orcamentoPath(orcamentoId))
+        && get(orcamentoPath(orcamentoId)).data.user_id == uid();
+    }
+
     match /profiles/{userId} {
       allow get: if signedIn() && (userId == uid() || isAdmin());
       allow list: if isAdmin();
@@ -124,6 +154,15 @@ service cloud.firestore {
       allow delete: if signedIn() && userId == uid() && isTenantActive(uid());
     }
 
+    match /tenant_counters/{userId} {
+      allow read: if signedIn() && (userId == uid() || isAdmin());
+      allow create, update: if signedIn()
+        && userId == uid()
+        && isTenantActive(uid())
+        && validCounterData(userId);
+      allow delete: if false;
+    }
+
     match /clientes/{clienteId} {
       allow read: if isAdmin() || (ownsExistingData() && isTenantActive(uid()));
       allow create: if ownsIncomingData() && isTenantActive(uid());
@@ -136,12 +175,25 @@ service cloud.firestore {
 
     match /orcamentos/{orcamentoId} {
       allow read: if isAdmin() || (ownsExistingData() && isTenantActive(uid()));
-      allow create: if ownsIncomingData() && isTenantActive(uid());
+      allow create: if ownsIncomingData()
+        && isTenantActive(uid())
+        && validOrcamentoStatus(request.resource.data.status);
       allow update: if ownsExistingData()
         && isTenantActive(uid())
         && keepsOwner()
-        && request.resource.data.user_id == uid();
+        && request.resource.data.user_id == uid()
+        && validOrcamentoStatus(request.resource.data.status);
       allow delete: if ownsExistingData() && isTenantActive(uid());
+
+      match /revisions/{revisionId} {
+        allow read: if isAdmin() || (ownsOrcamento(orcamentoId) && isTenantActive(uid()));
+        allow create: if signedIn()
+          && isTenantActive(uid())
+          && ownsOrcamento(orcamentoId)
+          && request.resource.data.user_id == uid()
+          && request.resource.data.orcamento_id == orcamentoId;
+        allow update, delete: if false;
+      }
     }
 
     match /public_orcamentos/{publicId} {
