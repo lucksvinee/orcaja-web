@@ -4,7 +4,10 @@ import { auth, db } from '../firebase';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect
 } from 'firebase/auth';
 import { ensureTenantProfile } from '../profileUtils';
 
@@ -21,7 +24,16 @@ const getFriendlyAuthError = (error) => {
     'auth/invalid-credential': 'E-mail ou senha incorretos.',
     'auth/invalid-email': 'Digite um e-mail válido.',
     'auth/missing-password': 'Digite sua senha.',
+    'auth/account-exists-with-different-credential': 'Este e-mail já existe com outro método de login.',
+    'auth/cancelled-popup-request': 'A janela de login foi cancelada. Tente novamente.',
+    'auth/operation-not-supported-in-this-environment': 'Este navegador exige login por redirecionamento.',
+    'auth/operation-not-allowed': 'Ative o provedor Google no Firebase Authentication.',
+    'auth/popup-blocked': 'O navegador bloqueou a janela do Google. Tente novamente.',
+    'auth/popup-closed-by-user': 'Login com Google cancelado.',
+    'auth/redirect-cancelled-by-user': 'Login com Google cancelado.',
+    'auth/redirect-operation-pending': 'Já existe um login em andamento.',
     'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos e tente novamente.',
+    'auth/unauthorized-domain': 'Este domínio não está autorizado no Firebase Authentication.',
     'auth/user-disabled': 'Esta conta foi desativada. Entre em contato com o suporte.',
     'auth/user-not-found': 'Conta não encontrada. Confira o e-mail ou crie uma conta.',
     'auth/weak-password': `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`,
@@ -29,6 +41,18 @@ const getFriendlyAuthError = (error) => {
   };
 
   return messages[error?.code] || error?.message || 'Não foi possível concluir a operação.';
+};
+
+const createGoogleProvider = () => {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  return provider;
+};
+
+const shouldUseRedirectLogin = () => {
+  const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const mobile = /android|iphone|ipad|ipod/i.test(window.navigator.userAgent) || window.innerWidth < 768;
+  return standalone || mobile;
 };
 
 export default function Login() {
@@ -50,6 +74,38 @@ export default function Login() {
     } catch (error) {
       setErro(getFriendlyAuthError(error));
     }
+    setLoading(false);
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setErro('');
+    setMsg('');
+
+    try {
+      const provider = createGoogleProvider();
+
+      if (shouldUseRedirectLogin()) {
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
+      const userCredential = await signInWithPopup(auth, provider);
+      await ensureTenantProfile(db, userCredential.user);
+      setMsg('Login com Google realizado com sucesso.');
+    } catch (error) {
+      if (error?.code === 'auth/popup-blocked' || error?.code === 'auth/operation-not-supported-in-this-environment') {
+        try {
+          await signInWithRedirect(auth, createGoogleProvider());
+          return;
+        } catch (redirectError) {
+          setErro(getFriendlyAuthError(redirectError));
+        }
+      } else {
+        setErro(getFriendlyAuthError(error));
+      }
+    }
+
     setLoading(false);
   };
 
@@ -126,6 +182,24 @@ export default function Login() {
             {msg}
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={loading}
+          className="mb-5 flex w-full items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-base font-black text-blue-600 shadow-sm ring-1 ring-slate-200">
+            G
+          </span>
+          {loading ? 'Aguarde...' : 'Entrar com Google'}
+        </button>
+
+        <div className="mb-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-slate-200" />
+          <span className="text-xs font-bold uppercase text-slate-400">ou</span>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
