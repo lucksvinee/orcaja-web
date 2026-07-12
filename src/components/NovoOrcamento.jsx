@@ -36,12 +36,18 @@ import {
 import {
   DEFAULT_ACCENT_COLOR,
   DEFAULT_COMPANY_TERMS,
+  DEFAULT_PAYMENT_DETAILS,
+  PAYMENT_METHOD_OPTIONS,
+  buildPaymentDescription,
   buildPublicOrcamentoUrl,
   createShareToken,
   getDefaultValidUntil,
+  getPaymentMethodLabel,
   hexToRgb,
+  normalizePaymentDetails,
   sanitizeHexColor,
 } from '../publicOrcamento';
+import { PROFESSIONAL_TEMPLATES } from '../professionalTemplates';
 
 export default function NovoOrcamento() {
   const { clienteId: clienteIdParam, orcamentoId: orcamentoIdParam } = useParams();
@@ -75,10 +81,13 @@ export default function NovoOrcamento() {
 
   const draftKey = orcamentoId || `novo:${clienteId || 'sem-cliente'}`;
   const baseDraftItems = useMemo(() => getOrcamentoDraftItems(orcamentoExistente), [orcamentoExistente]);
+  const basePaymentDetails = useMemo(() => normalizePaymentDetails(orcamentoExistente?.payment || DEFAULT_PAYMENT_DETAILS), [orcamentoExistente]);
   const [materiaisDraft, setMateriaisDraft] = useState({ key: draftKey, value: null });
   const [maoDeObraDraft, setMaoDeObraDraft] = useState({ key: draftKey, value: null });
+  const [paymentDraft, setPaymentDraft] = useState({ key: draftKey, value: null });
   const materiais = getDraftValue(materiaisDraft, draftKey, baseDraftItems.materiais);
   const maoDeObra = getDraftValue(maoDeObraDraft, draftKey, baseDraftItems.maoDeObra);
+  const paymentDetails = getDraftValue(paymentDraft, draftKey, basePaymentDetails);
 
   const setMateriais = useCallback((updater) => {
     setMateriaisDraft((previousDraft) => nextDraftState(previousDraft, draftKey, baseDraftItems.materiais, updater));
@@ -87,6 +96,10 @@ export default function NovoOrcamento() {
   const setMaoDeObra = useCallback((updater) => {
     setMaoDeObraDraft((previousDraft) => nextDraftState(previousDraft, draftKey, baseDraftItems.maoDeObra, updater));
   }, [draftKey, baseDraftItems.maoDeObra]);
+
+  const setPaymentDetails = useCallback((updater) => {
+    setPaymentDraft((previousDraft) => nextDraftState(previousDraft, draftKey, basePaymentDetails, updater));
+  }, [draftKey, basePaymentDetails]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModalMaterial, setShowModalMaterial] = useState(false);
@@ -113,6 +126,7 @@ export default function NovoOrcamento() {
   
   const [userId, setUserId] = useState(null);
   const [showModalCompanyDetails, setShowModalCompanyDetails] = useState(false);
+  const [showProposalPreview, setShowProposalPreview] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [companyPhone, setCompanyPhone] = useState('');
@@ -120,6 +134,7 @@ export default function NovoOrcamento() {
   const [companyAccentColor, setCompanyAccentColor] = useState(DEFAULT_ACCENT_COLOR);
   const [companyTerms, setCompanyTerms] = useState(DEFAULT_COMPANY_TERMS);
   const [publishingPublicLink, setPublishingPublicLink] = useState(false);
+  const [sendingProposal, setSendingProposal] = useState(false);
 
   const [showModalAI, setShowModalAI] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -315,6 +330,37 @@ export default function NovoOrcamento() {
     showCatalogFeedback(`${pacote.nome} adicionado ao orçamento.`);
   };
 
+  const applyProfessionalTemplate = (template) => {
+    setMateriais(prev => {
+      const firstId = nextNumericId(prev);
+      return [
+        ...prev,
+        ...template.materiais.map((material, index) => ({
+          ...material,
+          id: firstId + index,
+          precoInternet: estimateInternetPrice(material.nome, material.precoVenda),
+        })),
+      ];
+    });
+
+    setMaoDeObra(prev => {
+      const firstId = nextNumericId(prev);
+      return [
+        ...prev,
+        ...template.servicos.map((servico, index) => ({
+          ...servico,
+          id: firstId + index,
+        })),
+      ];
+    });
+
+    if (template.terms) {
+      setCompanyTerms(template.terms);
+    }
+
+    showCatalogFeedback(`Template de ${template.label.toLowerCase()} aplicado.`);
+  };
+
   const updateCatalogDraft = (itemId, field, value) => {
     setCatalogDrafts(prev => ({
       ...prev,
@@ -387,6 +433,13 @@ export default function NovoOrcamento() {
 
   const updateMaterial = (id, field, value) => {
     setMateriais(materiais.map(item => item.id === id ? { ...item, [field]: field === 'nome' ? value : Number(value) } : item));
+  };
+
+  const updatePaymentDetails = (field, value) => {
+    setPaymentDetails(prev => normalizePaymentDetails({
+      ...prev,
+      [field]: ['down_payment', 'installments'].includes(field) ? Number(value) : value,
+    }));
   };
 
   const alteraQtdMaterial = (id, delta) => {
@@ -674,6 +727,23 @@ export default function NovoOrcamento() {
       pdf.setFontSize(14);
       pdf.text('TOTAL:', summaryBoxX + 5, yPosition + 25);
       pdf.text(`R$ ${totalGeral.toFixed(2).replace('.', ',')}`, summaryBoxX + summaryBoxW - 5, yPosition + 25, { align: 'right' });
+      yPosition += summaryBoxH + 8;
+
+      checkPageBreak(22);
+      pdf.setFont('Helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      pdf.text('PAGAMENTO', marginX, yPosition);
+      yPosition += 5;
+      pdf.setFont('Helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      pdf.text(paymentDescription, marginX, yPosition);
+      yPosition += 5;
+      if (normalizedPaymentDetails.notes) {
+        pdf.text(normalizedPaymentDetails.notes.slice(0, 100), marginX, yPosition);
+        yPosition += 5;
+      }
 
       // --- Condições / Observações ---
       pdf.setFont('Helvetica', 'normal');
@@ -721,6 +791,9 @@ export default function NovoOrcamento() {
   };
 
   const { totalMateriais, totalMaoDeObra, totalGeral } = calculateOrcamentoTotals(materiais, maoDeObra);
+  const formatCurrencyText = (value) => `R$ ${Number(value || 0).toFixed(2).replace('.', ',')}`;
+  const normalizedPaymentDetails = normalizePaymentDetails(paymentDetails);
+  const paymentDescription = buildPaymentDescription(normalizedPaymentDetails, totalGeral, formatCurrencyText);
 
   const normalizeWhatsAppPhone = (phone = '') => {
     const digits = phone.replace(/\D/g, '');
@@ -728,55 +801,90 @@ export default function NovoOrcamento() {
     return `55${digits}`;
   };
 
-  const buildShareMessage = () => {
-    const numero = orcamentoExistente?.numero ? String(orcamentoExistente.numero).padStart(4, '0') : 'novo';
-    const publicUrl = orcamentoExistente?.public_url;
+  const buildShareMessage = ({ publicUrl, targetOrcamento } = {}) => {
+    const sourceOrcamento = targetOrcamento || orcamentoExistente;
+    const numero = sourceOrcamento?.numero ? String(sourceOrcamento.numero).padStart(4, '0') : 'novo';
+    const proposalUrl = publicUrl || sourceOrcamento?.public_url;
     const linhas = [
       `Olá, ${cliente?.nome || 'tudo bem'}!`,
       `${companyName || 'Nossa equipe'} preparou o orçamento #${numero}.`,
       `Materiais: R$ ${totalMateriais.toFixed(2).replace('.', ',')}`,
       `Serviços: R$ ${totalMaoDeObra.toFixed(2).replace('.', ',')}`,
       `Total: R$ ${totalGeral.toFixed(2).replace('.', ',')}`,
-      publicUrl ? `Aprove ou acompanhe por aqui: ${publicUrl}` : '',
+      `Pagamento: ${paymentDescription}`,
+      proposalUrl ? `Aprove ou acompanhe por aqui: ${proposalUrl}` : '',
       'O orçamento é válido por 15 dias. Posso tirar alguma dúvida?'
     ].filter(Boolean);
 
     return linhas.join('\n');
   };
 
-  const publishApprovalLink = async () => {
-    if (!orcamentoId) {
+  const buildOrcamentoPayload = (status = normalizeOrcamentoStatus(orcamentoExistente?.status)) => ({
+    cliente_id: resolvedClienteId,
+    itens: materiais,
+    servicos: maoDeObra,
+    total: totalGeral,
+    payment: normalizedPaymentDetails,
+    status,
+  });
+
+  const saveCurrentOrcamento = async ({ silent = false } = {}) => {
+    if (!resolvedClienteId) {
+      throw new Error('Selecione um cliente para salvar o orçamento.');
+    }
+
+    if (orcamentoId) {
+      await updateOrcamento(orcamentoId, buildOrcamentoPayload());
+      if (!silent) toast.success('Orçamento atualizado com sucesso.');
+      return {
+        ...(orcamentoExistente || {}),
+        id: orcamentoId,
+        ...buildOrcamentoPayload(),
+      };
+    }
+
+    const novoOrc = await addOrcamento(buildOrcamentoPayload(ORCAMENTO_STATUS.draft));
+    if (!silent) toast.success('Orçamento salvo com sucesso.');
+    navigate(`/orcamento/editar/${novoOrc.id}`, { replace: true });
+    return novoOrc;
+  };
+
+  const publishApprovalLink = async ({ copy = true, targetOrcamento } = {}) => {
+    const sourceOrcamento = targetOrcamento || orcamentoExistente;
+    const targetOrcamentoId = sourceOrcamento?.id || orcamentoId;
+
+    if (!targetOrcamentoId) {
       toast.error('Salve o orçamento antes de gerar o link de aprovação.');
-      return;
+      return null;
     }
 
     if (!cliente) {
       toast.error('Selecione um cliente antes de gerar o link.');
-      return;
+      return null;
     }
 
     const ownerId = userId || auth.currentUser?.uid;
     if (!ownerId) {
       toast.error('Usuário não autenticado.');
-      return;
+      return null;
     }
 
     setPublishingPublicLink(true);
     try {
       const now = new Date().toISOString();
-      const token = orcamentoExistente?.share_token || createShareToken();
+      const token = sourceOrcamento?.share_token || createShareToken();
       const publicUrl = buildPublicOrcamentoUrl(token);
-      const currentOrcamentoStatus = normalizeOrcamentoStatus(orcamentoExistente?.status);
+      const currentOrcamentoStatus = normalizeOrcamentoStatus(sourceOrcamento?.status);
       const statusToPublish = currentOrcamentoStatus === ORCAMENTO_STATUS.draft
         ? ORCAMENTO_STATUS.sent
         : currentOrcamentoStatus;
 
       await setDoc(doc(db, 'public_orcamentos', token), {
         user_id: ownerId,
-        orcamento_id: String(orcamentoId),
+        orcamento_id: String(targetOrcamentoId),
         share_token: token,
         public_url: publicUrl,
-        numero: orcamentoExistente?.numero || null,
+        numero: sourceOrcamento?.numero || null,
         status: statusToPublish,
         cliente: {
           nome: cliente.nome || 'Cliente',
@@ -791,30 +899,48 @@ export default function NovoOrcamento() {
         },
         itens: materiais,
         servicos: maoDeObra,
+        payment: normalizedPaymentDetails,
+        payment_description: paymentDescription,
         total: totalGeral,
         total_materiais: totalMateriais,
         total_servicos: totalMaoDeObra,
         valid_until: getDefaultValidUntil(),
-        published_at: orcamentoExistente?.published_at || now,
+        published_at: sourceOrcamento?.published_at || now,
         updated_at: now,
       }, { merge: true });
 
-      await updateOrcamento(orcamentoId, {
+      await updateOrcamento(targetOrcamentoId, {
         share_token: token,
         public_url: publicUrl,
         public_updated_at: now,
         status: statusToPublish,
       });
 
-      try {
-        await navigator.clipboard.writeText(publicUrl);
-        toast.success('Link de aprovação copiado.');
-      } catch {
-        toast.success('Link de aprovação gerado.');
+      if (copy) {
+        try {
+          await navigator.clipboard.writeText(publicUrl);
+          toast.success('Link de aprovação copiado.');
+        } catch {
+          toast.success('Link de aprovação gerado.');
+        }
       }
+
+      return {
+        publicUrl,
+        token,
+        status: statusToPublish,
+        orcamento: {
+          ...sourceOrcamento,
+          id: targetOrcamentoId,
+          share_token: token,
+          public_url: publicUrl,
+          status: statusToPublish,
+        },
+      };
     } catch (error) {
       console.error('Erro ao publicar link de aprovação:', error);
       toast.error(`Erro ao gerar link: ${error.message || 'Tente novamente'}`);
+      return null;
     } finally {
       setPublishingPublicLink(false);
     }
@@ -837,6 +963,51 @@ export default function NovoOrcamento() {
     }
   };
 
+  const enviarProposta = async () => {
+    const phone = normalizeWhatsAppPhone(cliente?.telefone || '');
+    if (phone.length < 12) {
+      toast.error('Cadastre o telefone do cliente para enviar a proposta pelo WhatsApp.');
+      return;
+    }
+
+    setSendingProposal(true);
+    try {
+      const savedOrcamento = await saveCurrentOrcamento({ silent: true });
+      const published = await publishApprovalLink({
+        copy: false,
+        targetOrcamento: savedOrcamento,
+      });
+
+      if (!published?.publicUrl) return;
+
+      const message = buildShareMessage({
+        publicUrl: published.publicUrl,
+        targetOrcamento: published.orcamento,
+      });
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+      setShowProposalPreview(false);
+      toast.success('Proposta pronta para envio pelo WhatsApp.');
+    } catch (error) {
+      console.error('Erro ao enviar proposta:', error);
+      toast.error(`Erro ao enviar proposta: ${error.message || 'Tente novamente'}`);
+    } finally {
+      setSendingProposal(false);
+    }
+  };
+
+  const gerarLinkProposta = async () => {
+    try {
+      const savedOrcamento = await saveCurrentOrcamento({ silent: true });
+      await publishApprovalLink({
+        copy: true,
+        targetOrcamento: savedOrcamento,
+      });
+    } catch (error) {
+      console.error('Erro ao gerar link da proposta:', error);
+      toast.error(`Erro ao gerar link: ${error.message || 'Tente novamente'}`);
+    }
+  };
+
   const openRevisionHistory = async () => {
     if (!orcamentoId) return;
 
@@ -853,33 +1024,8 @@ export default function NovoOrcamento() {
   };
 
   const salvarOrcamento = async () => {
-    if (!resolvedClienteId) {
-      toast.error('Selecione um cliente para salvar o orçamento.');
-      return;
-    }
-
     try {
-      if (orcamentoId) {
-        // Editar
-        await updateOrcamento(orcamentoId, {
-          itens: materiais,
-          servicos: maoDeObra,
-          total: totalGeral
-        });
-        toast.success('Orçamento atualizado com sucesso.');
-      } else {
-        // Criar novo
-          const novoOrc = await addOrcamento({
-          cliente_id: resolvedClienteId,
-          itens: materiais,
-          servicos: maoDeObra,
-          total: totalGeral,
-          status: ORCAMENTO_STATUS.draft
-        });
-        toast.success('Orçamento salvo com sucesso.');
-          // Redireciona de forma silenciosa para o link da edição sem tirar o usuário da tela
-          navigate(`/orcamento/editar/${novoOrc.id}`, { replace: true });
-      }
+      await saveCurrentOrcamento();
     } catch (error) {
       console.error('Erro ao salvar orçamento:', error);
       toast.error(`Erro ao salvar orçamento: ${error.message || 'Tente novamente'}`);
@@ -985,6 +1131,23 @@ export default function NovoOrcamento() {
             >
               {isGeneratingPDF ? '⏳ Gerando...' : '📄 Gerar PDF'}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowProposalPreview(true)}
+              className="min-w-0 rounded-lg border border-slate-400 bg-slate-800 px-3 py-2 text-sm font-semibold transition hover:bg-slate-700 sm:px-4"
+            >
+              Prévia
+            </button>
+            {cliente && (
+              <button
+                type="button"
+                onClick={enviarProposta}
+                disabled={sendingProposal || publishingPublicLink}
+                className="min-w-0 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-400 sm:px-4"
+              >
+                {sendingProposal ? 'Enviando...' : 'Enviar proposta'}
+              </button>
+            )}
             {cliente && (
               <button
                 onClick={enviarWhatsApp}
@@ -996,7 +1159,7 @@ export default function NovoOrcamento() {
             {cliente && orcamentoId && (
               <button
                 type="button"
-                onClick={publishApprovalLink}
+                onClick={gerarLinkProposta}
                 disabled={publishingPublicLink}
                 className="min-w-0 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-gray-400 sm:px-4"
               >
@@ -1057,6 +1220,110 @@ export default function NovoOrcamento() {
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
             <p className="text-xs font-bold uppercase text-blue-700">Total para aprovação</p>
             <p className="mt-1 text-lg font-black text-blue-950">R$ {totalGeral.toFixed(2).replace('.', ',')}</p>
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Templates por profissão</h2>
+              <p className="text-sm text-slate-500">Comece com uma base pronta e ajuste materiais, serviços e valores depois.</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {PROFESSIONAL_TEMPLATES.map(template => (
+              <div key={template.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase text-blue-700">{template.label}</p>
+                <h3 className="mt-2 font-black text-slate-900">{template.title}</h3>
+                <p className="mt-2 text-sm text-slate-500">{template.description}</p>
+                <button
+                  type="button"
+                  onClick={() => applyProfessionalTemplate(template)}
+                  className="mt-4 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800"
+                >
+                  Aplicar template
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Pagamento e envio</h2>
+              <p className="text-sm text-slate-500">Essas condições aparecem no PDF, no link público e na mensagem enviada ao cliente.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-bold text-slate-700">
+                  Forma de pagamento
+                  <select
+                    value={normalizedPaymentDetails.method}
+                    onChange={e => updatePaymentDetails('method', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {PAYMENT_METHOD_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-bold text-slate-700">
+                  Parcelas
+                  <input
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={normalizedPaymentDetails.installments}
+                    onChange={e => updatePaymentDetails('installments', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+                <label className="block text-sm font-bold text-slate-700">
+                  Entrada
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={normalizedPaymentDetails.down_payment}
+                    onChange={e => updatePaymentDetails('down_payment', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+                <label className="block text-sm font-bold text-slate-700 sm:col-span-2">
+                  Observação de pagamento
+                  <input
+                    value={normalizedPaymentDetails.notes}
+                    onChange={e => updatePaymentDetails('notes', e.target.value)}
+                    placeholder="Ex.: PIX na aprovação e restante na entrega"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+              <p className="text-xs font-black uppercase text-blue-700">Resumo para o cliente</p>
+              <p className="mt-2 text-lg font-black text-blue-950">{getPaymentMethodLabel(normalizedPaymentDetails.method)}</p>
+              <p className="mt-2 text-sm font-semibold text-blue-900">{paymentDescription}</p>
+              {normalizedPaymentDetails.notes && (
+                <p className="mt-2 text-sm text-blue-800">{normalizedPaymentDetails.notes}</p>
+              )}
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProposalPreview(true)}
+                  className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  Ver prévia
+                </button>
+                <button
+                  type="button"
+                  onClick={enviarProposta}
+                  disabled={!cliente || sendingProposal || publishingPublicLink}
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                >
+                  {sendingProposal ? 'Preparando...' : 'Enviar proposta'}
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1514,6 +1781,137 @@ export default function NovoOrcamento() {
           </div>
         </div>
       </main>
+
+      {/* MODAL PRÉVIA DA PROPOSTA */}
+      {showProposalPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-slate-50 shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white p-5">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: sanitizeHexColor(companyAccentColor, DEFAULT_ACCENT_COLOR) }}>
+                  Prévia do cliente
+                </p>
+                <h3 className="mt-1 text-xl font-black text-slate-950">Como a proposta será vista</h3>
+                <p className="mt-1 text-sm text-slate-500">Confira dados, valores, pagamento e condições antes de enviar.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProposalPreview(false)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5">
+              <section className="rounded-lg border border-slate-200 bg-white p-5">
+                <div className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
+                  <div>
+                    <p className="text-xs font-bold uppercase text-slate-500">Empresa</p>
+                    <h2 className="mt-1 text-2xl font-black text-slate-950">{companyName || 'Sua empresa'}</h2>
+                    <p className="mt-2 text-sm text-slate-500">{[companyPhone, companyEmail].filter(Boolean).join(' · ') || 'Contato não informado'}</p>
+                    <div className="mt-5">
+                      <p className="text-xs font-bold uppercase text-slate-500">Cliente</p>
+                      <p className="mt-1 text-lg font-black text-slate-950">{cliente?.nome || 'Cliente não selecionado'}</p>
+                    </div>
+                  </div>
+                  <div
+                    className="rounded-lg p-5 text-white"
+                    style={{ backgroundColor: sanitizeHexColor(companyAccentColor, DEFAULT_ACCENT_COLOR) }}
+                  >
+                    <p className="text-xs font-bold uppercase opacity-80">Total da proposta</p>
+                    <p className="mt-2 text-3xl font-black">{formatCurrencyText(totalGeral)}</p>
+                    <p className="mt-3 text-sm opacity-90">{paymentDescription}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-5 lg:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 bg-white p-5">
+                  <h4 className="font-black text-slate-900">Materiais</h4>
+                  <div className="mt-4 space-y-3">
+                    {materiais.length === 0 ? (
+                      <p className="text-sm text-slate-500">Sem materiais.</p>
+                    ) : materiais.map((item, index) => (
+                      <div key={`${item.nome}-${index}`} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm last:border-0 last:pb-0">
+                        <div>
+                          <p className="font-bold text-slate-900">{item.nome}</p>
+                          <p className="mt-1 text-xs text-slate-500">{item.qtd} un x {formatCurrencyText(item.precoVenda)}</p>
+                        </div>
+                        <p className="font-black text-slate-900">{formatCurrencyText(Number(item.qtd || 0) * Number(item.precoVenda || 0))}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white p-5">
+                  <h4 className="font-black text-slate-900">Serviços</h4>
+                  <div className="mt-4 space-y-3">
+                    {maoDeObra.length === 0 ? (
+                      <p className="text-sm text-slate-500">Sem serviços.</p>
+                    ) : maoDeObra.map((item, index) => (
+                      <div key={`${item.descricao}-${index}`} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm last:border-0 last:pb-0">
+                        <div>
+                          <p className="font-bold text-slate-900">{item.descricao}</p>
+                          <p className="mt-1 text-xs text-slate-500">{item.horas} h x {formatCurrencyText(item.valorHora)}</p>
+                        </div>
+                        <p className="font-black text-slate-900">{formatCurrencyText(Number(item.horas || 0) * Number(item.valorHora || 0))}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-5 lg:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 bg-white p-5">
+                  <h4 className="font-black text-slate-900">Pagamento</h4>
+                  <p className="mt-2 text-sm font-semibold text-slate-700">{paymentDescription}</p>
+                  {normalizedPaymentDetails.notes && (
+                    <p className="mt-2 text-sm text-slate-500">{normalizedPaymentDetails.notes}</p>
+                  )}
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-5">
+                  <h4 className="font-black text-slate-900">Aceite do cliente</h4>
+                  <div className="mt-3 space-y-2 opacity-70">
+                    <input disabled value="" placeholder="Nome completo do cliente" className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm" />
+                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                      <input disabled type="checkbox" />
+                      Aceito as condições desta proposta.
+                    </label>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-slate-200 bg-white p-5">
+                <h4 className="font-black text-slate-900">Condições</h4>
+                <ul className="mt-3 space-y-2 text-sm text-slate-600">
+                  {String(companyTerms || DEFAULT_COMPANY_TERMS).split('\n').map(line => line.trim()).filter(Boolean).map(line => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProposalPreview(false)}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  Continuar editando
+                </button>
+                <button
+                  type="button"
+                  onClick={enviarProposta}
+                  disabled={!cliente || sendingProposal || publishingPublicLink}
+                  className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                >
+                  {sendingProposal ? 'Preparando...' : 'Salvar, gerar link e enviar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL HISTÓRICO DE VERSÕES */}
       {showRevisionHistory && (

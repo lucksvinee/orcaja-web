@@ -13,6 +13,8 @@ O projeto agora tem uma base para SaaS comercial:
 - Emuladores configurados para desenvolvimento.
 - Estrutura de regras de calculo separada em utilitarios reutilizaveis.
 - Calculadora de materiais para estimar metragem de cabo, eletroduto, caixas, disjuntores e mao de obra a partir do tipo de servico.
+- Templates por profissão para iniciar propostas de elétrica, hidráulica, pintura e marcenaria com itens editáveis.
+- Proposta pública com prévia, forma de pagamento e aceite simples do cliente.
 
 ## Modelo de dados recomendado
 
@@ -68,6 +70,12 @@ O projeto agora tem uma base para SaaS comercial:
   itens: array,
   servicos: array,
   total: number,
+  payment: {
+    method: 'a_combinar' | 'pix' | 'cartao' | 'entrada_restante' | 'parcelado',
+    down_payment: number,
+    installments: number,
+    notes: string
+  },
   status: 'rascunho' | 'enviado' | 'visualizado' | 'aprovado' | 'recusado' | 'concluído',
   share_token: string,
   public_url: string,
@@ -127,6 +135,8 @@ Controla a numeração sequencial de orçamentos por prestador.
   },
   itens: array,
   servicos: array,
+  payment: object,
+  payment_description: string,
   total: number,
   total_materiais: number,
   total_servicos: number,
@@ -134,11 +144,16 @@ Controla a numeração sequencial de orçamentos por prestador.
   published_at: string,
   updated_at: string,
   viewed_at: string,
-  responded_at: string
+  responded_at: string,
+  client_acceptance: {
+    name: string,
+    accepted_terms: boolean,
+    accepted_at: string
+  }
 }
 ```
 
-Versão pública e segura da proposta. O prestador publica com login; o cliente acessa por token e só pode marcar como visualizado, aprovado ou recusado.
+Versão pública e segura da proposta. O prestador publica com login; o cliente acessa por token e só pode marcar como visualizado, aprovado ou recusado. Para aprovação, o cliente informa nome e aceita as condições da proposta.
 
 ### `catalog_overrides/{uid}`
 

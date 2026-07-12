@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import logo from '../assets/scarface-logo.png';
@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const viewedReminderShownRef = useRef(false);
   const userEmail = auth.currentUser?.email?.split('@')[0] || 'Usuário';
 
   const clientesById = useMemo(() => {
@@ -79,6 +80,7 @@ export default function Dashboard() {
       pendingValue: pending.reduce((acc, curr) => acc + (curr.total || 0), 0),
       conversionRate: decided.length ? Math.round((approved.length / decided.length) * 100) : 0,
       pendingCount: pending.length,
+      viewedCount: orcamentos.filter(o => normalizeOrcamentoStatus(o.status) === ORCAMENTO_STATUS.viewed).length,
       clientCount: clientes.length,
     };
   }, [orcamentos, clientes]);
@@ -96,6 +98,17 @@ export default function Dashboard() {
       return haystack.includes(searchTerm.toLowerCase());
     })
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const viewedPendingOrcamentos = useMemo(() => {
+    return enrichedOrcamentos.filter(orcamento => normalizeOrcamentoStatus(orcamento.status) === ORCAMENTO_STATUS.viewed);
+  }, [enrichedOrcamentos]);
+
+  useEffect(() => {
+    if (viewedPendingOrcamentos.length > 0 && !viewedReminderShownRef.current) {
+      viewedReminderShownRef.current = true;
+      toast(`Você tem ${viewedPendingOrcamentos.length} proposta${viewedPendingOrcamentos.length > 1 ? 's' : ''} visualizada${viewedPendingOrcamentos.length > 1 ? 's' : ''} aguardando resposta.`);
+    }
+  }, [viewedPendingOrcamentos.length]);
 
   const handleLogout = async () => {
     await auth.signOut();
@@ -119,9 +132,12 @@ export default function Dashboard() {
       return;
     }
 
+    const isViewed = normalizeOrcamentoStatus(orcamento.status) === ORCAMENTO_STATUS.viewed;
     const message = [
       `Olá, ${orcamento.cliente?.nome || 'tudo bem'}!`,
-      `Passando para confirmar se você recebeu o orçamento #${orcamento.numero ? String(orcamento.numero).padStart(4, '0') : orcamento.id.substring(0, 5)}.`,
+      isViewed
+        ? `Vi que você abriu o orçamento #${orcamento.numero ? String(orcamento.numero).padStart(4, '0') : orcamento.id.substring(0, 5)}.`
+        : `Passando para confirmar se você recebeu o orçamento #${orcamento.numero ? String(orcamento.numero).padStart(4, '0') : orcamento.id.substring(0, 5)}.`,
       `Valor total: ${currency.format(orcamento.total || 0)}.`,
       'Posso tirar alguma dúvida para seguirmos?'
     ].join('\n');
@@ -307,6 +323,11 @@ export default function Dashboard() {
                       <p className="mt-2 text-sm text-slate-600">
                         {(orcamento.itens || []).length} materiais · {(orcamento.servicos || []).length} serviços
                       </p>
+                      {normalizeOrcamentoStatus(orcamento.status) === ORCAMENTO_STATUS.viewed && (
+                        <p className="mt-1 text-xs font-semibold text-cyan-700">
+                          Cliente visualizou a proposta. Vale fazer um lembrete.
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-3 md:items-end">
@@ -350,6 +371,15 @@ export default function Dashboard() {
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <h2 className="font-bold text-slate-900">Próximas ações</h2>
               <div className="mt-4 space-y-3 text-sm">
+                {metrics.viewedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(ORCAMENTO_STATUS.viewed)}
+                    className="w-full rounded-lg bg-cyan-50 p-3 text-left font-semibold text-cyan-800 hover:bg-cyan-100"
+                  >
+                    {metrics.viewedCount} proposta{metrics.viewedCount > 1 ? 's' : ''} visualizada{metrics.viewedCount > 1 ? 's' : ''} sem resposta
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setStatusFilter(ORCAMENTO_STATUS.sent)}

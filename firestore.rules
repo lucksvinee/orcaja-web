@@ -98,7 +98,18 @@ service cloud.firestore {
     function isPublicDecisionTransition() {
       return resource.data.status in ['enviado', 'visualizado']
         && request.resource.data.status in ['aprovado', 'recusado']
-        && request.resource.data.responded_at is string;
+        && request.resource.data.responded_at is string
+        && (
+          request.resource.data.status == 'recusado'
+          || validClientAcceptance()
+        );
+    }
+
+    function validClientAcceptance() {
+      return request.resource.data.client_acceptance.name is string
+        && request.resource.data.client_acceptance.name.size() >= 3
+        && request.resource.data.client_acceptance.accepted_terms == true
+        && request.resource.data.client_acceptance.accepted_at is string;
     }
 
     function validPublicStatusUpdate() {
@@ -106,6 +117,7 @@ service cloud.firestore {
           'status',
           'viewed_at',
           'responded_at',
+          'client_acceptance',
           'updated_at'
         ])
         && request.resource.data.user_id == resource.data.user_id

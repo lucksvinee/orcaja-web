@@ -11,6 +11,8 @@ import {
 } from '../orcamentoStatus';
 import {
   DEFAULT_ACCENT_COLOR,
+  buildPaymentDescription,
+  normalizePaymentDetails,
   sanitizeHexColor,
 } from '../publicOrcamento';
 
@@ -35,6 +37,8 @@ export default function PublicOrcamentoPage() {
   const [orcamento, setOrcamento] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submittingStatus, setSubmittingStatus] = useState('');
+  const [acceptanceName, setAcceptanceName] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const publicRef = useMemo(() => {
     return token ? doc(db, 'public_orcamentos', token) : null;
@@ -91,19 +95,39 @@ export default function PublicOrcamentoPage() {
       return;
     }
 
+    if (status === ORCAMENTO_STATUS.approved) {
+      if (acceptanceName.trim().length < 3) {
+        toast.error('Digite seu nome para aprovar a proposta.');
+        return;
+      }
+
+      if (!acceptedTerms) {
+        toast.error('Confirme o aceite das condicoes da proposta.');
+        return;
+      }
+    }
+
     setSubmittingStatus(status);
     try {
       const now = new Date().toISOString();
-      await updateDoc(publicRef, {
+      const updates = {
         status,
         responded_at: now,
         updated_at: now,
-      });
+      };
+
+      if (status === ORCAMENTO_STATUS.approved) {
+        updates.client_acceptance = {
+          name: acceptanceName.trim(),
+          accepted_terms: true,
+          accepted_at: now,
+        };
+      }
+
+      await updateDoc(publicRef, updates);
       setOrcamento(prev => ({
         ...prev,
-        status,
-        responded_at: now,
-        updated_at: now,
+        ...updates,
       }));
       toast.success(status === ORCAMENTO_STATUS.approved
         ? 'Proposta aprovada com sucesso.'
@@ -147,6 +171,9 @@ export default function PublicOrcamentoPage() {
   const company = orcamento.company || {};
   const cliente = orcamento.cliente || {};
   const terms = String(company.terms || '').split('\n').map(line => line.trim()).filter(Boolean);
+  const payment = normalizePaymentDetails(orcamento.payment || {});
+  const paymentDescription = orcamento.payment_description || buildPaymentDescription(payment, Number(orcamento.total || 0), value => currency.format(value));
+  const acceptance = orcamento.client_acceptance || {};
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -241,6 +268,14 @@ export default function PublicOrcamentoPage() {
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="text-lg font-black text-slate-900">Pagamento</h3>
+          <p className="mt-3 text-sm font-semibold text-slate-700">{paymentDescription}</p>
+          {payment.notes && (
+            <p className="mt-2 text-sm text-slate-500">{payment.notes}</p>
+          )}
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm font-bold text-slate-900">
@@ -251,6 +286,29 @@ export default function PublicOrcamentoPage() {
                   ? `Status atual: ${getOrcamentoStatusLabel(status)}.`
                   : 'Sua resposta fica registrada automaticamente para quem enviou o orcamento.'}
               </p>
+              {canRespond ? (
+                <div className="mt-4 space-y-3">
+                  <input
+                    value={acceptanceName}
+                    onChange={event => setAcceptanceName(event.target.value)}
+                    placeholder="Seu nome completo para aprovação"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <label className="flex items-start gap-2 text-sm text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={event => setAcceptedTerms(event.target.checked)}
+                      className="mt-1 h-4 w-4"
+                    />
+                    <span>Li e aceito as condições desta proposta.</span>
+                  </label>
+                </div>
+              ) : acceptance.name ? (
+                <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
+                  Aceite registrado por {acceptance.name} em {formatDate(acceptance.accepted_at)}.
+                </p>
+              ) : null}
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <button

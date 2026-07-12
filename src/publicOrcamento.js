@@ -8,6 +8,21 @@ export const DEFAULT_COMPANY_TERMS = [
   'Valores sujeitos a alteração sem aviso prévio.',
 ].join('\n');
 
+export const DEFAULT_PAYMENT_DETAILS = {
+  method: 'a_combinar',
+  down_payment: 0,
+  installments: 1,
+  notes: '',
+};
+
+export const PAYMENT_METHOD_OPTIONS = [
+  { value: 'a_combinar', label: 'A combinar' },
+  { value: 'pix', label: 'PIX' },
+  { value: 'cartao', label: 'Cartão' },
+  { value: 'entrada_restante', label: 'Entrada + restante' },
+  { value: 'parcelado', label: 'Parcelado' },
+];
+
 const STATUS_PRIORITY = {
   [ORCAMENTO_STATUS.draft]: 0,
   [ORCAMENTO_STATUS.sent]: 1,
@@ -58,4 +73,52 @@ export function getDefaultValidUntil() {
   const date = new Date();
   date.setDate(date.getDate() + 15);
   return date.toISOString();
+}
+
+export function normalizePaymentDetails(payment = {}) {
+  const method = PAYMENT_METHOD_OPTIONS.some(option => option.value === payment.method)
+    ? payment.method
+    : DEFAULT_PAYMENT_DETAILS.method;
+  const downPayment = Math.max(0, Number(payment.down_payment || 0));
+  const installments = Math.max(1, Math.min(24, Number(payment.installments || 1)));
+
+  return {
+    ...DEFAULT_PAYMENT_DETAILS,
+    ...payment,
+    method,
+    down_payment: downPayment,
+    installments,
+    notes: String(payment.notes || '').slice(0, 280),
+  };
+}
+
+export function getPaymentMethodLabel(method) {
+  return PAYMENT_METHOD_OPTIONS.find(option => option.value === method)?.label || 'A combinar';
+}
+
+export function buildPaymentDescription(payment = {}, total = 0, formatter) {
+  const normalized = normalizePaymentDetails(payment);
+  const formatMoney = formatter || ((value) => `R$ ${Number(value || 0).toFixed(2).replace('.', ',')}`);
+  const totalValue = Number(total || 0);
+
+  if (normalized.method === 'pix') {
+    return 'Pagamento via PIX.';
+  }
+
+  if (normalized.method === 'cartao') {
+    return normalized.installments > 1
+      ? `Pagamento no cartão em até ${normalized.installments}x de ${formatMoney(totalValue / normalized.installments)}.`
+      : 'Pagamento no cartão.';
+  }
+
+  if (normalized.method === 'entrada_restante') {
+    const remaining = Math.max(0, totalValue - normalized.down_payment);
+    return `Entrada de ${formatMoney(normalized.down_payment)} e restante de ${formatMoney(remaining)} na conclusão.`;
+  }
+
+  if (normalized.method === 'parcelado') {
+    return `${normalized.installments} parcelas de ${formatMoney(totalValue / normalized.installments)}.`;
+  }
+
+  return 'Forma de pagamento a combinar.';
 }
