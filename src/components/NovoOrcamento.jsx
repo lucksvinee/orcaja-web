@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
 import { useOrcamentos } from '../useOrcamentos';
 import { useClientes } from '../useClientes';
@@ -187,7 +188,7 @@ export default function NovoOrcamento() {
       setAiPrompt('');
     } catch (error) {
       console.error('Erro na IA:', error);
-      alert('Erro ao gerar com IA. Verifique sua chave da API ou tente novamente.');
+      toast.error('Erro ao gerar com IA. Verifique sua chave da API ou tente novamente.');
     } finally {
       setIsGeneratingAI(false);
     }
@@ -319,7 +320,7 @@ export default function NovoOrcamento() {
   const saveCatalogPrice = async (type, item, changes) => {
     const user = auth.currentUser;
     if (!user) {
-      alert('Faça login para editar o catálogo.');
+      toast.error('Faça login para editar o catálogo.');
       return;
     }
 
@@ -348,9 +349,10 @@ export default function NovoOrcamento() {
         delete nextDrafts[item.id];
         return nextDrafts;
       });
+      toast.success('Preço do catálogo salvo.');
     } catch (error) {
       console.error('Erro ao salvar preço do catálogo:', error);
-      alert('Erro ao salvar preço do catálogo: ' + (error.message || 'Tente novamente'));
+      toast.error(`Erro ao salvar preço do catálogo: ${error.message || 'Tente novamente'}`);
     } finally {
       setSavingCatalogItem(null);
     }
@@ -418,7 +420,10 @@ export default function NovoOrcamento() {
   }, []);
 
   const saveCompanyDetails = async () => {
-    if (!userId) return alert('Usuário não autenticado.');
+    if (!userId) {
+      toast.error('Usuário não autenticado.');
+      return;
+    }
     
     try {
       await setDoc(doc(db, 'company_profiles', userId), {
@@ -429,9 +434,9 @@ export default function NovoOrcamento() {
         company_email: companyEmail,
       }, { merge: true });
       setShowModalCompanyDetails(false);
-      alert('Dados da empresa salvos com sucesso!');
+      toast.success('Dados da empresa salvos com sucesso.');
     } catch (error) {
-      alert('Erro ao salvar dados da empresa: ' + error.message);
+      toast.error(`Erro ao salvar dados da empresa: ${error.message || 'Tente novamente'}`);
     }
   };
 
@@ -685,9 +690,10 @@ export default function NovoOrcamento() {
       // Salvar PDF
       const filename = `orcamento-${cliente?.nome || 'geral'}-${new Date().getTime()}.pdf`;
       pdf.save(filename);
+      toast.success('PDF gerado com sucesso.');
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);
-      alert('Erro ao gerar PDF: ' + (error.message || 'Tente novamente'));
+      toast.error(`Erro ao gerar PDF: ${error.message || 'Tente novamente'}`);
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -718,11 +724,12 @@ export default function NovoOrcamento() {
   const enviarWhatsApp = () => {
     const phone = normalizeWhatsAppPhone(cliente?.telefone || '');
     if (phone.length < 12) {
-      alert('Cadastre o telefone do cliente para enviar o orçamento pelo WhatsApp.');
+      toast.error('Cadastre o telefone do cliente para enviar o orçamento pelo WhatsApp.');
       return;
     }
 
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(buildShareMessage())}`, '_blank', 'noopener,noreferrer');
+    toast.success('WhatsApp aberto para envio.');
 
     if (orcamentoId && normalizeOrcamentoStatus(orcamentoExistente?.status) === ORCAMENTO_STATUS.draft) {
       updateOrcamento(orcamentoId, { status: ORCAMENTO_STATUS.sent }).catch((error) => {
@@ -740,7 +747,7 @@ export default function NovoOrcamento() {
       const revisions = await getOrcamentoRevisions(orcamentoId);
       setRevisionHistory(revisions);
     } catch (error) {
-      alert('Erro ao carregar histórico: ' + (error.message || 'Tente novamente'));
+      toast.error(`Erro ao carregar histórico: ${error.message || 'Tente novamente'}`);
     } finally {
       setLoadingRevisions(false);
     }
@@ -748,7 +755,7 @@ export default function NovoOrcamento() {
 
   const salvarOrcamento = async () => {
     if (!resolvedClienteId) {
-      alert('Selecione um cliente para salvar o orçamento');
+      toast.error('Selecione um cliente para salvar o orçamento.');
       return;
     }
 
@@ -760,7 +767,7 @@ export default function NovoOrcamento() {
           servicos: maoDeObra,
           total: totalGeral
         });
-        alert('Orçamento atualizado com sucesso!');
+        toast.success('Orçamento atualizado com sucesso.');
       } else {
         // Criar novo
           const novoOrc = await addOrcamento({
@@ -770,13 +777,13 @@ export default function NovoOrcamento() {
           total: totalGeral,
           status: ORCAMENTO_STATUS.draft
         });
-        alert('Orçamento salvo com sucesso!');
+        toast.success('Orçamento salvo com sucesso.');
           // Redireciona de forma silenciosa para o link da edição sem tirar o usuário da tela
           navigate(`/orcamento/editar/${novoOrc.id}`, { replace: true });
       }
     } catch (error) {
       console.error('Erro ao salvar orçamento:', error);
-      alert('Erro ao salvar orçamento: ' + error.message);
+      toast.error(`Erro ao salvar orçamento: ${error.message || 'Tente novamente'}`);
     }
   };
 

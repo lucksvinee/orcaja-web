@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { auth, db } from '../firebase';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
@@ -39,7 +40,7 @@ export default function AdminDashboard() {
       setProfiles(profilesList);
     } catch (error) {
       console.error('Erro ao buscar perfis:', error);
-      alert('Erro ao carregar inquilinos. Você tem permissão de Admin?');
+      toast.error('Erro ao carregar inquilinos. Você tem permissão de Admin?');
     }
     setLoading(false);
   };
@@ -57,8 +58,9 @@ export default function AdminDashboard() {
         updated_at: new Date().toISOString()
       });
       setProfiles(profiles.map(p => p.id === id ? { ...p, status: newStatus } : p));
+      toast.success(newStatus === 'active' ? 'Cliente ativado.' : 'Cliente bloqueado.');
     } catch (error) {
-      alert('Erro ao atualizar status: ' + (error.message || 'Sem permissão'));
+      toast.error(`Erro ao atualizar status: ${error.message || 'Sem permissão'}`);
     }
   };
 
@@ -91,8 +93,9 @@ export default function AdminDashboard() {
           updated_at: new Date().toISOString()
         });
         setProfiles(profiles.map(p => p.id === id ? { ...p, status: 'cancelled' } : p));
+        toast.success('Perfil cancelado.');
       } catch (error) {
-        alert('Erro ao cancelar perfil: ' + (error.message || 'Sem permissão'));
+        toast.error(`Erro ao cancelar perfil: ${error.message || 'Sem permissão'}`);
       }
     }
   };

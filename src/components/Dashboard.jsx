@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import logo from '../assets/scarface-logo.png';
 import { auth } from '../firebase';
 import { useOrcamentos } from '../useOrcamentos';
@@ -106,7 +107,7 @@ export default function Dashboard() {
       await updateOrcamento(id, { status: novoStatus, updated_at: new Date().toISOString() });
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
-      alert('Erro ao atualizar status do orçamento');
+      toast.error('Erro ao atualizar status do orçamento.');
     }
   };
 
@@ -114,7 +115,7 @@ export default function Dashboard() {
     event.stopPropagation();
     const phone = normalizePhone(orcamento.cliente?.telefone);
     if (!phone) {
-      alert('Cadastre um telefone para enviar pelo WhatsApp.');
+      toast.error('Cadastre um telefone para enviar pelo WhatsApp.');
       return;
     }
 
@@ -126,6 +127,7 @@ export default function Dashboard() {
     ].join('\n');
 
     window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+    toast.success('WhatsApp aberto para envio.');
 
     if (normalizeOrcamentoStatus(orcamento.status) === ORCAMENTO_STATUS.draft) {
       updateOrcamentoStatus(orcamento.id, ORCAMENTO_STATUS.sent);
@@ -134,10 +136,12 @@ export default function Dashboard() {
 
   const exportClientes = () => {
     downloadCsv('orcaja-clientes.csv', buildClientesCsvRows(clientes));
+    toast.success('Clientes exportados em CSV.');
   };
 
   const exportOrcamentos = () => {
     downloadCsv('orcaja-orcamentos.csv', buildOrcamentosCsvRows(enrichedOrcamentos));
+    toast.success('Orçamentos exportados em CSV.');
   };
 
   return (

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useClientes } from './useClientes';
 import { z } from 'zod';
 
@@ -15,7 +16,7 @@ const normalizePhone = (phone = '') => phone.replace(/\D/g, '');
 const openWhatsApp = (cliente) => {
   const phone = normalizePhone(cliente.telefone);
   if (!phone) {
-    alert('Cadastre um telefone para chamar este cliente no WhatsApp.');
+    toast.error('Cadastre um telefone para chamar este cliente no WhatsApp.');
     return;
   }
 
@@ -50,17 +51,22 @@ export default function ClientesPage() {
       setNovoCliente({ nome: '', email: '', telefone: '', endereco: '' });
       setShowModal(false);
       setFormErrors({});
-      alert('Cliente adicionado com sucesso!');
+      toast.success('Cliente adicionado com sucesso.');
     } catch (error) {
       console.error('Erro ao adicionar cliente:', error);
-      alert('Erro ao adicionar cliente: ' + (error.message || 'Tente novamente'));
+      toast.error(`Erro ao adicionar cliente: ${error.message || 'Tente novamente'}`);
       setFormErrors({ submit: [error.message || 'Erro ao adicionar cliente'] });
     }
   };
 
-  const handleRemoveCliente = (id) => {
-    if (confirm('Tem certeza que deseja remover este cliente?')) {
-      removeCliente(id);
+  const handleRemoveCliente = async (id) => {
+    if (window.confirm('Tem certeza que deseja remover este cliente?')) {
+      try {
+        await removeCliente(id);
+        toast.success('Cliente removido com sucesso.');
+      } catch (error) {
+        toast.error(`Erro ao remover cliente: ${error.message || 'Tente novamente'}`);
+      }
     }
   };
 
@@ -183,28 +189,28 @@ export default function ClientesPage() {
                     )}
                   </div>
 
-                  <div className="flex gap-2 pt-2 border-t border-slate-200">
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
                     <button
                       onClick={() => navigate(`/clientes/${cliente.id}`)}
-                      className="flex-1 rounded-lg bg-slate-900 hover:bg-slate-800 px-3 py-2 text-white text-xs font-semibold transition"
+                      className="min-w-0 rounded-lg bg-slate-900 px-3 py-2 text-center text-xs font-semibold text-white transition hover:bg-slate-800"
                     >
                       Histórico
                     </button>
                     <button
                       onClick={() => navigate(`/orcamento/novo/${cliente.id}`)}
-                      className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2 text-white text-xs font-semibold transition"
+                      className="min-w-0 rounded-lg bg-blue-600 px-3 py-2 text-center text-xs font-semibold text-white transition hover:bg-blue-700"
                     >
                       Orçamento
                     </button>
                     <button
                       onClick={() => openWhatsApp(cliente)}
-                      className="rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 text-emerald-700 text-xs font-semibold transition"
+                      className="min-w-0 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
                     >
                       WhatsApp
                     </button>
                     <button
                       onClick={() => handleRemoveCliente(cliente.id)}
-                      className="rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-2 text-red-700 text-xs font-semibold transition"
+                      className="min-w-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-700 transition hover:bg-red-100"
                     >
                       Excluir
                     </button>

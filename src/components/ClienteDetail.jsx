@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useClientes } from '../useClientes';
 import { useOrcamentos } from '../useOrcamentos';
 import { getOrcamentoStatusClass, getOrcamentoStatusLabel } from '../orcamentoStatus';
@@ -23,10 +24,10 @@ export default function ClienteDetail() {
     if (window.confirm('Tem certeza que deseja remover este orçamento?')) {
       try {
         await removeOrcamento(orcamentoId);
-        alert('Orçamento removido com sucesso!');
+        toast.success('Orçamento removido com sucesso.');
       } catch (error) {
         console.error('Erro ao remover orçamento:', error);
-        alert('Erro ao remover orçamento: ' + error.message);
+        toast.error(`Erro ao remover orçamento: ${error.message || 'Tente novamente'}`);
       }
     }
   };
