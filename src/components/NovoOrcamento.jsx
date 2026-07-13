@@ -49,6 +49,28 @@ import {
 } from '../publicOrcamento';
 import { PROFESSIONAL_TEMPLATES } from '../professionalTemplates';
 
+const toPublicNumber = (value) => {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+};
+
+const toPublicText = (value, fallback, limit = 140) => {
+  const text = String(value || fallback).trim();
+  return text.slice(0, limit);
+};
+
+const buildPublicMaterial = (item) => ({
+  nome: toPublicText(item?.nome, 'Material'),
+  qtd: toPublicNumber(item?.qtd),
+  precoVenda: toPublicNumber(item?.precoVenda),
+});
+
+const buildPublicServico = (item) => ({
+  descricao: toPublicText(item?.descricao, 'Servico'),
+  horas: toPublicNumber(item?.horas),
+  valorHora: toPublicNumber(item?.valorHora),
+});
+
 export default function NovoOrcamento() {
   const { clienteId: clienteIdParam, orcamentoId: orcamentoIdParam } = useParams();
   const navigate = useNavigate();
@@ -878,6 +900,8 @@ export default function NovoOrcamento() {
       const statusToPublish = currentOrcamentoStatus === ORCAMENTO_STATUS.draft
         ? ORCAMENTO_STATUS.sent
         : currentOrcamentoStatus;
+      const publicItens = materiais.map(buildPublicMaterial);
+      const publicServicos = maoDeObra.map(buildPublicServico);
 
       await setDoc(doc(db, 'public_orcamentos', token), {
         user_id: ownerId,
@@ -897,8 +921,8 @@ export default function NovoOrcamento() {
           accent_color: sanitizeHexColor(companyAccentColor, DEFAULT_ACCENT_COLOR),
           terms: companyTerms || DEFAULT_COMPANY_TERMS,
         },
-        itens: materiais,
-        servicos: maoDeObra,
+        itens: publicItens,
+        servicos: publicServicos,
         payment: normalizedPaymentDetails,
         payment_description: paymentDescription,
         total: totalGeral,

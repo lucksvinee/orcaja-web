@@ -8,12 +8,13 @@
     "build": "vite build",
     "lint": "eslint .",
     "admin:migrate-trial-dates": "node scripts/migrateTrialDates.cjs",
+    "admin:sanitize-public-orcamentos": "node scripts/sanitizePublicOrcamentos.cjs",
     "firebase:emulators": "firebase emulators:start",
     "firebase:deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage",
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^10.8.0",
+    "firebase": "^12.16.0",
     "firebase-admin": "^14.1.0",
     "html2pdf.js": "^0.14.0",
     "jspdf": "^4.2.1",

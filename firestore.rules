@@ -83,48 +83,145 @@ service cloud.firestore {
       ];
     }
 
+    function validPublicOrcamentoStatus(status) {
+      return status in [
+        'enviado',
+        'visualizado',
+        'aprovado',
+        'recusado'
+      ];
+    }
+
+    function validPublicPayloadShape() {
+      return request.resource.data.keys().hasOnly([
+          'user_id',
+          'orcamento_id',
+          'share_token',
+          'public_url',
+          'numero',
+          'status',
+          'cliente',
+          'company',
+          'itens',
+          'servicos',
+          'payment',
+          'payment_description',
+          'total',
+          'total_materiais',
+          'total_servicos',
+          'valid_until',
+          'published_at',
+          'updated_at',
+          'viewed_at',
+          'responded_at',
+          'client_acceptance'
+        ])
+        && request.resource.data.cliente is map
+        && request.resource.data.cliente.keys().hasOnly(['nome'])
+        && request.resource.data.company is map
+        && request.resource.data.company.keys().hasOnly([
+          'name',
+          'address',
+          'phone',
+          'email',
+          'accent_color',
+          'terms'
+        ])
+        && request.resource.data.payment is map
+        && request.resource.data.payment.keys().hasOnly([
+          'method',
+          'down_payment',
+          'installments',
+          'notes'
+        ])
+        && request.resource.data.itens is list
+        && request.resource.data.itens.size() <= 200
+        && request.resource.data.servicos is list
+        && request.resource.data.servicos.size() <= 200;
+    }
+
     function validPublicOrcamentoData(publicId) {
       return request.resource.data.user_id == uid()
         && request.resource.data.share_token == publicId
-        && validOrcamentoStatus(request.resource.data.status);
+        && validPublicOrcamentoStatus(request.resource.data.status)
+        && validPublicPayloadShape();
     }
 
     function isPublicViewTransition() {
       return resource.data.status == 'enviado'
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'viewed_at',
+          'updated_at'
+        ])
+        && request.resource.data.diff(resource.data).changedKeys().hasAll([
+          'status',
+          'viewed_at',
+          'updated_at'
+        ])
         && request.resource.data.status == 'visualizado'
         && request.resource.data.viewed_at is string;
     }
 
-    function isPublicDecisionTransition() {
+    function isPublicRejectTransition() {
       return resource.data.status in ['enviado', 'visualizado']
-        && request.resource.data.status in ['aprovado', 'recusado']
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'responded_at',
+          'updated_at'
+        ])
+        && request.resource.data.diff(resource.data).changedKeys().hasAll([
+          'status',
+          'responded_at',
+          'updated_at'
+        ])
+        && request.resource.data.status == 'recusado'
+        && request.resource.data.responded_at is string;
+    }
+
+    function isPublicApprovalTransition() {
+      return resource.data.status in ['enviado', 'visualizado']
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'responded_at',
+          'client_acceptance',
+          'updated_at'
+        ])
+        && request.resource.data.diff(resource.data).changedKeys().hasAll([
+          'status',
+          'responded_at',
+          'client_acceptance',
+          'updated_at'
+        ])
+        && request.resource.data.status == 'aprovado'
         && request.resource.data.responded_at is string
-        && (
-          request.resource.data.status == 'recusado'
-          || validClientAcceptance()
-        );
+        && validClientAcceptance();
     }
 
     function validClientAcceptance() {
-      return request.resource.data.client_acceptance.name is string
+      return request.resource.data.client_acceptance is map
+        && request.resource.data.client_acceptance.keys().hasOnly([
+          'name',
+          'accepted_terms',
+          'accepted_at'
+        ])
+        && request.resource.data.client_acceptance.name is string
         && request.resource.data.client_acceptance.name.size() >= 3
+        && request.resource.data.client_acceptance.name.size() <= 120
         && request.resource.data.client_acceptance.accepted_terms == true
         && request.resource.data.client_acceptance.accepted_at is string;
     }
 
     function validPublicStatusUpdate() {
-      return request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          'status',
-          'viewed_at',
-          'responded_at',
-          'client_acceptance',
-          'updated_at'
-        ])
-        && request.resource.data.user_id == resource.data.user_id
+      return request.resource.data.user_id == resource.data.user_id
         && request.resource.data.orcamento_id == resource.data.orcamento_id
         && request.resource.data.share_token == resource.data.share_token
         && request.resource.data.updated_at is string
-        && (isPublicViewTransition() || isPublicDecisionTransition());
+        && (
+          isPublicViewTransition()
+          || isPublicRejectTransition()
+          || isPublicApprovalTransition()
+        );
     }
 
     function validCounterData(userId) {
@@ -241,7 +338,8 @@ service cloud.firestore {
     }
 
     match /public_orcamentos/{publicId} {
-      allow get: if true;
+      allow get: if resource.data.share_token == publicId
+        && validPublicOrcamentoStatus(resource.data.status);
       allow list: if false;
       allow create: if signedIn()
         && isTenantActive(uid())

@@ -28,6 +28,13 @@ const formatDate = (value) => {
   return date.toLocaleDateString('pt-BR');
 };
 
+const isPublicOrcamentoExpired = (orcamento) => {
+  if (!orcamento?.valid_until) return false;
+  const validUntil = new Date(orcamento.valid_until);
+  if (Number.isNaN(validUntil.getTime())) return false;
+  return validUntil.getTime() < Date.now();
+};
+
 const getLineTotal = (item, quantityKey, priceKey) => {
   return Number(item?.[quantityKey] || 0) * Number(item?.[priceKey] || 0);
 };
@@ -96,6 +103,11 @@ export default function PublicOrcamentoPage() {
     }
 
     if (status === ORCAMENTO_STATUS.approved) {
+      if (isPublicOrcamentoExpired(orcamento)) {
+        toast.error('Esta proposta venceu. Peça um novo envio antes de aprovar.');
+        return;
+      }
+
       if (acceptanceName.trim().length < 3) {
         toast.error('Digite seu nome para aprovar a proposta.');
         return;
@@ -322,7 +334,7 @@ export default function PublicOrcamentoPage() {
               <button
                 type="button"
                 onClick={() => respondToOrcamento(ORCAMENTO_STATUS.approved)}
-                disabled={!canRespond || alreadyResponded || submittingStatus !== ''}
+                disabled={!canRespond || alreadyResponded || expired || submittingStatus !== ''}
                 className="rounded-lg px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ backgroundColor: accentColor }}
               >
