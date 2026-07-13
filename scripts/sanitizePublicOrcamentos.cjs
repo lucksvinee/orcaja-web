@@ -1,11 +1,18 @@
+const fs = require("node:fs");
+const path = require("node:path");
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 
-const serviceAccount = require("./firebase-adminsdk.json");
+const serviceAccountPath = path.join(__dirname, "firebase-adminsdk.json");
 
-initializeApp({
-  credential: cert(serviceAccount),
-});
+if (fs.existsSync(serviceAccountPath)) {
+  const serviceAccount = require(serviceAccountPath);
+  initializeApp({
+    credential: cert(serviceAccount),
+  });
+} else {
+  initializeApp();
+}
 
 const db = getFirestore();
 
