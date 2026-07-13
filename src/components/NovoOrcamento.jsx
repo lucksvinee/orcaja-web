@@ -4,9 +4,8 @@ import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
 import { useOrcamentos } from '../useOrcamentos';
 import { useClientes } from '../useClientes';
-import { auth, db, functions } from '../firebase';
+import { auth, db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
 import {
   applyCatalogOverrides,
   buildCatalogOverridePayload,
@@ -158,9 +157,6 @@ export default function NovoOrcamento() {
   const [publishingPublicLink, setPublishingPublicLink] = useState(false);
   const [sendingProposal, setSendingProposal] = useState(false);
 
-  const [showModalAI, setShowModalAI] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [showRevisionHistory, setShowRevisionHistory] = useState(false);
   const [revisionHistory, setRevisionHistory] = useState([]);
   const [loadingRevisions, setLoadingRevisions] = useState(false);
@@ -185,62 +181,8 @@ export default function NovoOrcamento() {
     };
   }, []);
 
-  const gerarComIA = async () => {
-    if (!aiPrompt) return;
-    
-    setIsGeneratingAI(true);
-    try {
-      // Chamada para a Cloud Function segura
-      const callGerarOrcamento = httpsCallable(functions, 'gerarOrcamentoComIA');
-      const result = await callGerarOrcamento({ prompt: aiPrompt });
-      const parsed = result.data;
-      
-      // Função auxiliar para buscar preço real na nossa API interna
-      const buscarPrecoReal = async (nome) => {
-        try {
-          const res = await fetch(`/api/comparar-precos?q=${encodeURIComponent(nome)}`);
-          const searchData = await res.json();
-          if (searchData.items && searchData.items.length > 0) {
-            // Pega o primeiro resultado (mais relevante)
-            return searchData.items[0].price;
-          }
-        } catch (error) {
-          console.error("Erro ao buscar preço real para:", nome, error);
-        }
-        return null;
-      };
-
-      if (parsed.materiais) {
-        // Mapeia os materiais e tenta atualizar o preço de cada um
-        const firstMaterialId = nextNumericId(materiais);
-        const materiaisComPrecoReal = await Promise.all(parsed.materiais.map(async (m, i) => {
-          const precoReal = await buscarPrecoReal(m.nome);
-          const precoFinal = precoReal || m.precoVenda;
-          return {
-            ...m,
-            id: firstMaterialId + i,
-            precoVenda: precoFinal,
-            custo: precoFinal * 0.8,
-            precoInternet: precoReal ? precoReal : (m.precoVenda * 0.9)
-          };
-        }));
-        setMateriais(prev => [...prev, ...materiaisComPrecoReal]);
-      }
-      if (parsed.servicos) {
-        const firstServicoId = nextNumericId(maoDeObra);
-        setMaoDeObra(prev => [...prev, ...parsed.servicos.map((s, i) => ({
-          ...s,
-          id: firstServicoId + i
-        }))]);
-      }
-      setShowModalAI(false);
-      setAiPrompt('');
-    } catch (error) {
-      console.error('Erro na IA:', error);
-      toast.error('Erro ao gerar com IA. Verifique sua chave da API ou tente novamente.');
-    } finally {
-      setIsGeneratingAI(false);
-    }
+  const showAiSoon = () => {
+    toast('Assistente de IA em breve. A geração automática ficará disponível após a configuração.');
   };
 
   const removeMaterial = id => setMateriais(materiais.filter(item => item.id !== id));
@@ -2366,53 +2308,15 @@ export default function NovoOrcamento() {
         </div>
       )}
 
-      {/* MODAL IA */}
-      {showModalAI && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 max-w-lg w-full mx-4 shadow-2xl border border-purple-100">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="bg-purple-100 p-2 rounded-full">
-                ✨
-              </div>
-              <h3 className="text-xl font-bold text-slate-900">Assistente de IA</h3>
-            </div>
-            <p className="text-sm text-slate-500 mb-4">Descreva o serviço ou problema do cliente, e a IA irá sugerir materiais e mão de obra automaticamente.</p>
-            
-            <div className="space-y-4">
-              <textarea 
-                value={aiPrompt}
-                onChange={e => setAiPrompt(e.target.value)}
-                placeholder="Ex: Preciso instalar um chuveiro 220v com disjuntor novo e trocar a fiação de 6mm por 10 metros..."
-                className="w-full p-3 rounded-lg border border-slate-200 text-sm h-32 resize-none focus:ring-2 focus:ring-purple-500 outline-none"
-              />
-            </div>
-            
-            <div className="flex gap-3 mt-6">
-              <button 
-                onClick={() => setShowModalAI(false)}
-                className="flex-1 rounded-lg border border-slate-300 px-4 py-3 text-sm font-bold hover:bg-slate-50 transition text-slate-700"
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={gerarComIA}
-                disabled={isGeneratingAI || !aiPrompt}
-                className="flex-[2] rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-3 text-sm font-bold hover:from-purple-700 hover:to-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-md"
-              >
-                {isGeneratingAI ? '⏳ Gerando Orçamento...' : '✨ Gerar Orçamento'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* FLOATING BUTTON IA */}
       <button
-        onClick={() => setShowModalAI(true)}
-        className="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full p-4 shadow-xl hover:shadow-2xl hover:scale-105 transition transform flex items-center justify-center"
-        title="Assistente de Orçamento por IA"
+        type="button"
+        onClick={showAiSoon}
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border border-violet-200 bg-white px-4 py-3 text-sm font-black text-violet-700 shadow-xl transition hover:-translate-y-0.5 hover:shadow-2xl"
+        title="Assistente de IA em breve"
       >
-        <span className="text-2xl">✨</span>
+        <span className="text-lg">✨</span>
+        <span>IA em breve</span>
       </button>
 
       {/* PDF SECTION NO LONGER NEEDED - Using jsPDF instead of html2pdf */}

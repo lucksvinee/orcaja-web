@@ -35,6 +35,8 @@ export default function ClientesPage() {
     telefone: '',
     endereco: '',
   });
+  const [clienteToDelete, setClienteToDelete] = useState(null);
+  const [deletingClienteId, setDeletingClienteId] = useState(null);
 
   const [formErrors, setFormErrors] = useState({});
 
@@ -59,14 +61,18 @@ export default function ClientesPage() {
     }
   };
 
-  const handleRemoveCliente = async (id) => {
-    if (window.confirm('Tem certeza que deseja remover este cliente?')) {
-      try {
-        await removeCliente(id);
-        toast.success('Cliente removido com sucesso.');
-      } catch (error) {
-        toast.error(`Erro ao remover cliente: ${error.message || 'Tente novamente'}`);
-      }
+  const handleRemoveCliente = async () => {
+    if (!clienteToDelete) return;
+
+    setDeletingClienteId(clienteToDelete.id);
+    try {
+      await removeCliente(clienteToDelete.id);
+      toast.success('Cliente removido com sucesso.');
+      setClienteToDelete(null);
+    } catch (error) {
+      toast.error(`Erro ao remover cliente: ${error.message || 'Tente novamente'}`);
+    } finally {
+      setDeletingClienteId(null);
     }
   };
 
@@ -209,7 +215,7 @@ export default function ClientesPage() {
                       WhatsApp
                     </button>
                     <button
-                      onClick={() => handleRemoveCliente(cliente.id)}
+                      onClick={() => setClienteToDelete(cliente)}
                       className="min-w-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-700 transition hover:bg-red-100"
                     >
                       Excluir
@@ -290,6 +296,48 @@ export default function ClientesPage() {
                 className="flex-1 rounded-lg bg-emerald-600 text-white px-4 py-2 text-sm font-semibold hover:bg-emerald-700 transition"
               >
                 Adicionar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clienteToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-lg font-black text-red-600">
+                !
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase text-red-600">Confirmar exclusão</p>
+                <h3 className="mt-1 text-lg font-black text-slate-950">Excluir cliente?</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Confirme para remover o cadastro de <strong>{clienteToDelete.nome}</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              Confira se não há orçamento importante vinculado a este cliente antes de excluir.
+            </div>
+
+            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setClienteToDelete(null)}
+                disabled={deletingClienteId !== null}
+                className="rounded-lg border border-slate-300 px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleRemoveCliente}
+                disabled={deletingClienteId === clienteToDelete.id}
+                className="rounded-lg bg-red-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deletingClienteId === clienteToDelete.id ? 'Excluindo...' : 'Excluir cliente'}
               </button>
             </div>
           </div>
