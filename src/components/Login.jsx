@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import logo from '../assets/scarface-logo.png';
+import logo from '../assets/logoOrcaJa.png';
 import { auth, db } from '../firebase';
 import {
   signInWithEmailAndPassword,
@@ -167,7 +167,7 @@ export default function Login() {
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
         <div className="text-center mb-8">
-          <img src={logo} alt="Logo" className="w-20 h-20 mx-auto rounded-2xl bg-slate-100 p-2 mb-4" />
+          <img src={logo} alt="OrcaJá" className="w-20 h-20 mx-auto rounded-2xl bg-slate-100 p-2 mb-4" />
           <h1 className="text-2xl font-black text-slate-900">Bem-vindo ao OrcaJá</h1>
           <p className="text-sm text-slate-500 mt-2">Faça login para acessar o sistema</p>
         </div>
@@ -254,7 +254,7 @@ export default function Login() {
         </form>
         
         <div className="mt-6 text-center">
-          <p className="text-xs text-slate-400">Desenvolvido por Scarface Solutions</p>
+          <p className="text-xs text-slate-400">Desenvolvido por Lucas Inacio</p>
         </div>
       </div>
     </div>

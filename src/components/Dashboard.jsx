@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import logo from '../assets/scarface-logo.png';
+import logo from '../assets/logoOrcaJa.png';
 import { auth } from '../firebase';
 import { useOrcamentos } from '../useOrcamentos';
 import { useClientes } from '../useClientes';
@@ -182,7 +182,7 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto px-4 py-5">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-4">
-              <img src={logo} alt="Scarface Solutions" className="h-12 w-12 rounded-xl border border-white/15 bg-white/10 p-1.5" />
+              <img src={logo} alt="OrcaJá" className="h-12 w-12 rounded-xl border border-white/15 bg-white/10 p-1.5" />
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-slate-400">OrcaJá</p>
                 <h1 className="text-2xl font-black tracking-tight">Pipeline de orçamentos</h1>
