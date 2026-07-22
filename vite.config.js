@@ -92,7 +92,7 @@ export default defineConfig({
     productSearchPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.png', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.ico', 'favicon.png', 'favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'OrcaJa',
         short_name: 'OrcaJa',
