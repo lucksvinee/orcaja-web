@@ -51,10 +51,12 @@ const createGoogleProvider = () => {
   return provider;
 };
 
-const shouldUseRedirectLogin = () => {
-  const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  const mobile = /android|iphone|ipad|ipod/i.test(window.navigator.userAgent) || window.innerWidth < 768;
-  return standalone || mobile;
+const shouldFallbackToRedirect = (error) => {
+  return [
+    'auth/cancelled-popup-request',
+    'auth/operation-not-supported-in-this-environment',
+    'auth/popup-blocked',
+  ].includes(error?.code);
 };
 
 export default function Login() {
@@ -120,18 +122,13 @@ export default function Login() {
 
     try {
       const provider = createGoogleProvider();
-
-      if (shouldUseRedirectLogin()) {
-        await signInWithRedirect(auth, provider);
-        return;
-      }
-
       const userCredential = await signInWithPopup(auth, provider);
       await ensureTenantProfile(db, userCredential.user);
       setMsg('Login com Google realizado com sucesso.');
     } catch (error) {
-      if (error?.code === 'auth/popup-blocked' || error?.code === 'auth/operation-not-supported-in-this-environment') {
+      if (shouldFallbackToRedirect(error)) {
         try {
+          setMsg('Abrindo login do Google...');
           await signInWithRedirect(auth, createGoogleProvider());
           return;
         } catch (redirectError) {
