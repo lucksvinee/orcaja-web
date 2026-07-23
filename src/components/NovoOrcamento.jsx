@@ -48,21 +48,27 @@ import {
 } from '../publicOrcamento';
 import { PROFESSIONAL_TEMPLATES } from '../professionalTemplates';
 import {
+  buildAbcCurve,
   DEFAULT_ENGINEERING_DETAILS,
   ENGINEERING_PRICE_SOURCE_OPTIONS,
   ENGINEERING_UF_OPTIONS,
   ENGINEERING_UNIT_OPTIONS,
   ENGINEERING_WORK_TYPE_OPTIONS,
+  getEngineeringAudit,
+  getEngineeringHealthScore,
+  getEngineeringLineItems,
   getEngineeringWorkTypeLabel,
   getItemBdiRate,
   getLineBaseTotal,
   getLineTotalWithBdi,
   getMeasurementsTotal,
   getScheduleTotalPercent,
+  getStageSummary,
   isEngineeringDateBaseStale,
   normalizeEngineeringDetails,
   parseSinapiCsv,
 } from '../engineeringUtils';
+import { buildTechnicalBudgetCsvRows, downloadCsv } from '../exportUtils';
 
 const toPublicNumber = (value) => {
   const parsed = Number(value || 0);
@@ -83,6 +89,7 @@ const buildPublicMaterial = (item) => ({
   unidade: toPublicOptionalText(item?.unidade || 'un', 20),
   fonte: toPublicOptionalText(item?.fonte, 80),
   codigo: toPublicOptionalText(item?.codigo, 60),
+  etapa: toPublicOptionalText(item?.etapa, 120),
   memoria_calculo: toPublicOptionalText(item?.memoria_calculo, 220),
   bdi_rate: toPublicNumber(item?.bdi_rate),
 });
@@ -94,6 +101,7 @@ const buildPublicServico = (item) => ({
   unidade: toPublicOptionalText(item?.unidade || 'h', 20),
   fonte: toPublicOptionalText(item?.fonte, 80),
   codigo: toPublicOptionalText(item?.codigo, 60),
+  etapa: toPublicOptionalText(item?.etapa, 120),
   memoria_calculo: toPublicOptionalText(item?.memoria_calculo, 220),
   bdi_rate: toPublicNumber(item?.bdi_rate),
 });
@@ -174,6 +182,7 @@ export default function NovoOrcamento() {
     unidade: 'un',
     fonte: 'Composicao propria',
     codigo: '',
+    etapa: '',
     memoria_calculo: '',
     bdi_rate: '',
   });
@@ -184,6 +193,7 @@ export default function NovoOrcamento() {
     unidade: 'h',
     fonte: 'Composicao propria',
     codigo: '',
+    etapa: '',
     memoria_calculo: '',
     bdi_rate: '',
   });
@@ -256,6 +266,7 @@ export default function NovoOrcamento() {
     unidade: 'un',
     fonte: engineeringDetails.enabled ? engineeringDetails.reference_source : 'Composicao propria',
     codigo: '',
+    etapa: engineeringDetails.default_stage || '',
     memoria_calculo: '',
     bdi_rate: '',
   });
@@ -267,6 +278,7 @@ export default function NovoOrcamento() {
     unidade: 'h',
     fonte: engineeringDetails.enabled ? engineeringDetails.reference_source : 'Composicao propria',
     codigo: '',
+    etapa: engineeringDetails.default_stage || '',
     memoria_calculo: '',
     bdi_rate: '',
   });
@@ -280,6 +292,7 @@ export default function NovoOrcamento() {
     unidade: String(source.unidade || unitFallback).trim(),
     fonte: getDefaultItemSource(source.fonte),
     codigo: String(source.codigo || '').trim(),
+    etapa: String(source.etapa || engineeringDetails.default_stage || '').trim(),
     memoria_calculo: String(source.memoria_calculo || '').trim(),
     bdi_rate: source.bdi_rate === '' || source.bdi_rate === undefined || source.bdi_rate === null
       ? ''
@@ -1044,6 +1057,30 @@ export default function NovoOrcamento() {
           });
         }
 
+        if (abcCurve.length) {
+          const topAbcRows = abcCurve.slice(0, 10);
+          checkPageBreak(18 + topAbcRows.length * 6);
+          yPosition += 5;
+          pdf.setFont('Helvetica', 'bold');
+          pdf.setFontSize(11);
+          pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          pdf.text('CURVA ABC', marginX, yPosition);
+          yPosition += 6;
+
+          pdf.setFont('Helvetica', 'normal');
+          pdf.setFontSize(8);
+          pdf.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+          topAbcRows.forEach((line) => {
+            checkPageBreak(6);
+            pdf.text(
+              `${line.rank}. ${line.description.slice(0, 60)} | ${line.abc_class} | ${line.participation.toFixed(2).replace('.', ',')}% | R$ ${line.total.toFixed(2).replace('.', ',')}`,
+              marginX,
+              yPosition
+            );
+            yPosition += 5;
+          });
+        }
+
         if (normalizedEngineeringDetails.schedule.length) {
           checkPageBreak(20 + normalizedEngineeringDetails.schedule.length * 6);
           yPosition += 5;
@@ -1139,6 +1176,16 @@ export default function NovoOrcamento() {
   const schedulePercent = getScheduleTotalPercent(normalizedEngineeringDetails.schedule);
   const measuredTotal = getMeasurementsTotal(normalizedEngineeringDetails.measurements);
   const dateBaseIsStale = isEngineeringDateBaseStale(normalizedEngineeringDetails.date_base);
+  const engineeringLines = getEngineeringLineItems(materiais, maoDeObra, normalizedEngineeringDetails);
+  const abcCurve = buildAbcCurve(engineeringLines);
+  const stageSummary = getStageSummary(engineeringLines);
+  const engineeringAudit = getEngineeringAudit({
+    details: normalizedEngineeringDetails,
+    materiais,
+    maoDeObra,
+    totals: { totalGeral },
+  });
+  const engineeringHealthScore = getEngineeringHealthScore(engineeringAudit);
 
   const normalizeWhatsAppPhone = (phone = '') => {
     const digits = phone.replace(/\D/g, '');
@@ -1171,6 +1218,31 @@ export default function NovoOrcamento() {
     ].filter(Boolean);
 
     return linhas.join('\n');
+  };
+
+  const exportTechnicalBudget = () => {
+    if (!normalizedEngineeringDetails.enabled) {
+      toast.error('Ative o Modo Engenharia para exportar a planilha técnica.');
+      return;
+    }
+
+    const rows = buildTechnicalBudgetCsvRows({
+      orcamento: orcamentoExistente || { id: orcamentoId || 'novo' },
+      cliente: cliente || {},
+      materiais,
+      servicos: maoDeObra,
+      engineering: normalizedEngineeringDetails,
+      totals: {
+        totalMateriais,
+        totalMaoDeObra,
+        subtotalGeral,
+        totalBdi,
+        totalGeral,
+      },
+    });
+    const numero = orcamentoExistente?.numero ? String(orcamentoExistente.numero).padStart(4, '0') : 'novo';
+    downloadCsv(`orcaja-orcamento-tecnico-${numero}.csv`, rows);
+    toast.success('Planilha técnica exportada.');
   };
 
   const buildOrcamentoPayload = (status = normalizeOrcamentoStatus(orcamentoExistente?.status)) => ({
@@ -1749,6 +1821,16 @@ export default function NovoOrcamento() {
                     className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </label>
+
+                <label className="block text-sm font-bold text-slate-700 lg:col-span-2">
+                  Etapa padrão dos novos itens
+                  <input
+                    value={normalizedEngineeringDetails.default_stage}
+                    onChange={event => updateEngineeringDetail('default_stage', event.target.value)}
+                    placeholder="Ex.: Fundação, Estrutura, Instalações, Acabamento"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
               </div>
 
               {(dateBaseIsStale || totalBdi > 0) && (
@@ -1979,6 +2061,163 @@ export default function NovoOrcamento() {
                   className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </label>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-950 p-4 text-white">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-300">Engenharia Pro</p>
+                    <h3 className="mt-1 text-xl font-black">Análise executiva do orçamento</h3>
+                    <p className="mt-1 text-sm text-slate-300">
+                      Curva ABC, etapas, auditoria técnica e orçado x medido em uma visão única.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={exportTechnicalBudget}
+                    className="rounded-lg bg-white px-4 py-2 text-sm font-black text-slate-950 hover:bg-cyan-50"
+                  >
+                    Exportar planilha técnica
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-4 xl:grid-cols-[260px_1fr_1fr]">
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                    <p className="text-xs font-bold uppercase text-slate-400">Score técnico</p>
+                    <div className="mt-3 flex items-end gap-3">
+                      <p className={`text-5xl font-black ${engineeringHealthScore >= 80 ? 'text-emerald-300' : engineeringHealthScore >= 60 ? 'text-amber-300' : 'text-red-300'}`}>
+                        {engineeringHealthScore}
+                      </p>
+                      <p className="pb-2 text-sm font-bold text-slate-300">/100</p>
+                    </div>
+                    <div className="mt-4 h-2 rounded-full bg-slate-800">
+                      <div
+                        className={`h-2 rounded-full ${engineeringHealthScore >= 80 ? 'bg-emerald-400' : engineeringHealthScore >= 60 ? 'bg-amber-400' : 'bg-red-400'}`}
+                        style={{ width: `${engineeringHealthScore}%` }}
+                      />
+                    </div>
+                    <p className="mt-3 text-xs text-slate-400">
+                      {engineeringAudit.length ? `${engineeringAudit.length} ponto(s) para revisar antes de enviar.` : 'Entrega técnica consistente para apresentação.'}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="font-black">Auditoria técnica</h4>
+                      <span className="rounded-full bg-slate-800 px-2 py-1 text-xs font-bold text-slate-300">
+                        {engineeringAudit.length || 'OK'}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {engineeringAudit.length === 0 ? (
+                        <p className="rounded-lg bg-emerald-400/10 p-3 text-sm font-semibold text-emerald-200">
+                          Nenhuma inconsistência crítica encontrada.
+                        </p>
+                      ) : engineeringAudit.slice(0, 5).map(issue => (
+                        <div
+                          key={`${issue.title}-${issue.message}`}
+                          className={`rounded-lg p-3 text-sm ${
+                            issue.severity === 'critical'
+                              ? 'bg-red-400/10 text-red-100'
+                              : issue.severity === 'warning'
+                                ? 'bg-amber-400/10 text-amber-100'
+                                : 'bg-cyan-400/10 text-cyan-100'
+                          }`}
+                        >
+                          <p className="font-black">{issue.title}</p>
+                          <p className="mt-1 text-xs opacity-90">{issue.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                    <h4 className="font-black">Orçado x medido</h4>
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-lg bg-slate-900 p-3">
+                        <p className="text-xs font-bold uppercase text-slate-400">Orçado</p>
+                        <p className="mt-1 font-black text-white">{formatCurrencyText(totalGeral)}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-900 p-3">
+                        <p className="text-xs font-bold uppercase text-slate-400">Medido</p>
+                        <p className="mt-1 font-black text-white">{formatCurrencyText(measuredTotal)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 h-2 rounded-full bg-slate-800">
+                      <div
+                        className="h-2 rounded-full bg-cyan-400"
+                        style={{ width: `${Math.min(100, totalGeral ? (measuredTotal / totalGeral) * 100 : 0)}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">
+                      {totalGeral ? `${Math.min(100, (measuredTotal / totalGeral) * 100).toFixed(2).replace('.', ',')}% medido` : 'Sem valor orçado.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="font-black">Curva ABC</h4>
+                      <span className="text-xs font-bold text-slate-400">{abcCurve.length} item(ns)</span>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {abcCurve.length === 0 ? (
+                        <p className="rounded-lg bg-slate-900 p-3 text-sm text-slate-400">Adicione itens para gerar a análise.</p>
+                      ) : abcCurve.slice(0, 6).map(line => (
+                        <div key={`${line.rank}-${line.description}`} className="space-y-1">
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <p className="min-w-0 truncate font-bold text-slate-100">
+                              {line.rank}. {line.description}
+                            </p>
+                            <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-black ${
+                              line.abc_class === 'A' ? 'bg-red-400/20 text-red-100' : line.abc_class === 'B' ? 'bg-amber-400/20 text-amber-100' : 'bg-emerald-400/20 text-emerald-100'
+                            }`}>
+                              {line.abc_class}
+                            </span>
+                          </div>
+                          <div className="h-2 rounded-full bg-slate-800">
+                            <div
+                              className="h-2 rounded-full bg-blue-400"
+                              style={{ width: `${Math.min(100, line.participation)}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400">
+                            {formatCurrencyText(line.total)} · {line.participation.toFixed(2).replace('.', ',')}% do orçamento
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="font-black">Resumo por etapa</h4>
+                      <span className="text-xs font-bold text-slate-400">{stageSummary.length} etapa(s)</span>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {stageSummary.length === 0 ? (
+                        <p className="rounded-lg bg-slate-900 p-3 text-sm text-slate-400">Defina etapas nos itens para comparar frentes de obra.</p>
+                      ) : stageSummary.slice(0, 6).map(stage => (
+                        <div key={stage.stage} className="rounded-lg bg-slate-900 p-3">
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <p className="min-w-0 truncate font-black text-slate-100">{stage.stage}</p>
+                            <p className="shrink-0 font-bold text-cyan-200">{formatCurrencyText(stage.total)}</p>
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-slate-800">
+                            <div
+                              className="h-2 rounded-full bg-cyan-400"
+                              style={{ width: `${Math.min(100, stage.participation)}%` }}
+                            />
+                          </div>
+                          <p className="mt-2 text-xs text-slate-400">
+                            {stage.items} item(ns) · {stage.participation.toFixed(2).replace('.', ',')}%
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
@@ -2497,6 +2736,15 @@ export default function NovoOrcamento() {
                               />
                             </div>
                             <div>
+                              <label className="text-xs text-slate-500">Etapa</label>
+                              <input
+                                value={item.etapa || ''}
+                                onChange={e => updateMaterial(item.id, 'etapa', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                                placeholder="Ex.: Instalações"
+                              />
+                            </div>
+                            <div>
                               <label className="text-xs text-slate-500">BDI do item (%)</label>
                               <input
                                 type="number"
@@ -2685,6 +2933,15 @@ export default function NovoOrcamento() {
                                 onChange={e => updateServico(item.id, 'codigo', e.target.value)}
                                 className="w-full rounded border border-slate-200 p-2 text-sm"
                                 placeholder="Código da composição"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-500">Etapa</label>
+                              <input
+                                value={item.etapa || ''}
+                                onChange={e => updateServico(item.id, 'etapa', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                                placeholder="Ex.: Instalações"
                               />
                             </div>
                             <div>
@@ -3043,6 +3300,13 @@ export default function NovoOrcamento() {
                     className="w-full rounded border border-slate-200 p-2 text-sm"
                   />
                   <input
+                    value={novoMaterial.etapa}
+                    onChange={e => setNovoMaterial({...novoMaterial, etapa: e.target.value})}
+                    type="text"
+                    placeholder="Etapa da obra"
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  />
+                  <input
                     value={novoMaterial.bdi_rate}
                     onChange={e => setNovoMaterial({...novoMaterial, bdi_rate: e.target.value})}
                     type="number"
@@ -3135,6 +3399,13 @@ export default function NovoOrcamento() {
                     onChange={e => setNovoServico({...novoServico, codigo: e.target.value})}
                     type="text"
                     placeholder="Código da composição"
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  />
+                  <input
+                    value={novoServico.etapa}
+                    onChange={e => setNovoServico({...novoServico, etapa: e.target.value})}
+                    type="text"
+                    placeholder="Etapa da obra"
                     className="w-full rounded border border-slate-200 p-2 text-sm"
                   />
                   <input

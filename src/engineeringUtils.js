@@ -11,6 +11,7 @@ export const DEFAULT_ENGINEERING_DETAILS = {
   reference_uf: 'RJ',
   reference_month: '',
   global_bdi: 0,
+  default_stage: '',
   tax_notes: '',
   technical_notes: '',
   schedule: [],
@@ -97,6 +98,7 @@ export function normalizeEngineeringDetails(details = {}) {
       : DEFAULT_ENGINEERING_DETAILS.reference_uf,
     reference_month: sanitizeText(source.reference_month, 32),
     global_bdi: clampNumber(source.global_bdi, 0, 100),
+    default_stage: sanitizeText(source.default_stage, 120),
     tax_notes: sanitizeText(source.tax_notes, 300),
     technical_notes: sanitizeText(source.technical_notes, 600),
     schedule: normalizeSchedule(source.schedule),
@@ -132,6 +134,92 @@ export function getLineTotalWithBdi(item = {}, quantityKey, priceKey, engineerin
   return getLineBaseTotal(item, quantityKey, priceKey) + getLineBdiValue(item, quantityKey, priceKey, engineeringDetails);
 }
 
+export function getEngineeringLineItems(materiais = [], servicos = [], engineeringDetails = {}) {
+  const details = normalizeEngineeringDetails(engineeringDetails);
+  const buildLine = (item, type, index) => {
+    const quantityKey = type === 'material' ? 'qtd' : 'horas';
+    const priceKey = type === 'material' ? 'precoVenda' : 'valorHora';
+    const description = type === 'material' ? item.nome : item.descricao;
+    const baseTotal = getLineBaseTotal(item, quantityKey, priceKey);
+    const bdiRate = getItemBdiRate(item, details);
+    const bdiValue = getLineBdiValue(item, quantityKey, priceKey, details);
+
+    return {
+      id: item.id || `${type}-${index}`,
+      type,
+      type_label: type === 'material' ? 'Material' : 'Servico',
+      description: sanitizeText(description || '', 220),
+      quantity: clampNumber(item[quantityKey], 0),
+      unit: sanitizeText(item.unidade || (type === 'material' ? 'un' : 'h'), 20),
+      unit_price: clampNumber(item[priceKey], 0),
+      base_total: baseTotal,
+      bdi_rate: bdiRate,
+      bdi_value: bdiValue,
+      total: baseTotal + bdiValue,
+      source: sanitizeText(item.fonte, 80),
+      code: sanitizeText(item.codigo, 60),
+      memory: sanitizeText(item.memoria_calculo, 280),
+      stage: sanitizeText(item.etapa || details.default_stage || 'Sem etapa', 120),
+    };
+  };
+
+  return [
+    ...materiais.map((item, index) => buildLine(item, 'material', index)),
+    ...servicos.map((item, index) => buildLine(item, 'servico', index)),
+  ].filter(line => line.description && line.total > 0);
+}
+
+export function buildAbcCurve(lines = []) {
+  const totalBudget = lines.reduce((acc, line) => acc + Number(line.total || 0), 0);
+  let cumulative = 0;
+
+  return [...lines]
+    .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
+    .map((line, index) => {
+      const participation = totalBudget ? (Number(line.total || 0) / totalBudget) * 100 : 0;
+      cumulative += participation;
+
+      return {
+        ...line,
+        rank: index + 1,
+        participation,
+        cumulative,
+        abc_class: cumulative <= 80 ? 'A' : cumulative <= 95 ? 'B' : 'C',
+      };
+    });
+}
+
+export function getStageSummary(lines = []) {
+  const totalBudget = lines.reduce((acc, line) => acc + Number(line.total || 0), 0);
+  const grouped = lines.reduce((acc, line) => {
+    const stage = line.stage || 'Sem etapa';
+    acc[stage] ||= {
+      stage,
+      materials: 0,
+      services: 0,
+      total: 0,
+      items: 0,
+    };
+
+    acc[stage].items += 1;
+    acc[stage].total += Number(line.total || 0);
+    if (line.type === 'material') {
+      acc[stage].materials += Number(line.total || 0);
+    } else {
+      acc[stage].services += Number(line.total || 0);
+    }
+
+    return acc;
+  }, {});
+
+  return Object.values(grouped)
+    .map(stage => ({
+      ...stage,
+      participation: totalBudget ? (stage.total / totalBudget) * 100 : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
 export function getScheduleTotalPercent(schedule = []) {
   return normalizeSchedule(schedule).reduce((acc, stage) => acc + Number(stage.percentual || 0), 0);
 }
@@ -148,6 +236,79 @@ export function isEngineeringDateBaseStale(dateBase, now = new Date()) {
   const sixMonthsAgo = new Date(now);
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   return parsed.getTime() < sixMonthsAgo.getTime();
+}
+
+export function getEngineeringAudit({ details = {}, materiais = [], maoDeObra = [], totals = {} } = {}) {
+  const engineeringDetails = normalizeEngineeringDetails(details);
+  if (!engineeringDetails.enabled) return [];
+
+  const lines = getEngineeringLineItems(materiais, maoDeObra, engineeringDetails);
+  const schedulePercent = getScheduleTotalPercent(engineeringDetails.schedule);
+  const measuredTotal = getMeasurementsTotal(engineeringDetails.measurements);
+  const budgetTotal = Number(totals.totalGeral || 0);
+  const issues = [];
+  const addIssue = (severity, title, message) => issues.push({ severity, title, message });
+
+  if (!lines.length) {
+    addIssue('critical', 'Orcamento sem itens', 'Adicione materiais, servicos ou composicoes antes de entregar.');
+  }
+
+  if (!engineeringDetails.object) {
+    addIssue('warning', 'Objeto nao informado', 'Defina o objeto do orcamento para deixar a entrega tecnica rastreavel.');
+  }
+
+  if (!engineeringDetails.responsible_name || !engineeringDetails.professional_registry) {
+    addIssue('warning', 'Responsavel incompleto', 'Informe responsavel tecnico e CREA/CAU para relatorio profissional.');
+  }
+
+  if (!engineeringDetails.date_base && !engineeringDetails.reference_month) {
+    addIssue('warning', 'Sem data-base', 'Registre a competencia da tabela de precos usada.');
+  } else if (isEngineeringDateBaseStale(engineeringDetails.date_base)) {
+    addIssue('warning', 'Data-base antiga', 'Revise os precos antes de enviar uma proposta tecnica.');
+  }
+
+  const missingSourceCount = lines.filter(line => !line.source).length;
+  if (missingSourceCount > 0) {
+    addIssue('critical', 'Itens sem fonte', `${missingSourceCount} item(ns) nao informam SINAPI, cotacao ou composicao propria.`);
+  }
+
+  const missingMemoryCount = lines.filter(line => !line.memory).length;
+  if (missingMemoryCount > 0) {
+    addIssue('info', 'Memoria incompleta', `${missingMemoryCount} item(ns) ainda nao explicam o quantitativo.`);
+  }
+
+  const officialWithoutCodeCount = lines.filter(line => ['SINAPI', 'SICRO'].includes(line.source) && !line.code).length;
+  if (officialWithoutCodeCount > 0) {
+    addIssue('warning', 'Referencia sem codigo', `${officialWithoutCodeCount} item(ns) oficiais estao sem codigo de composicao/insumo.`);
+  }
+
+  const hasAnyBdi = engineeringDetails.global_bdi > 0 || lines.some(line => line.bdi_rate > 0);
+  if (!hasAnyBdi && budgetTotal > 0) {
+    addIssue('info', 'BDI zerado', 'Confirme se o preco final deve sair sem BDI.');
+  }
+
+  if (!engineeringDetails.schedule.length) {
+    addIssue('info', 'Sem cronograma', 'Adicionar cronograma fisico-financeiro aumenta a percepcao profissional da entrega.');
+  } else if (Math.abs(schedulePercent - 100) > 0.5) {
+    addIssue('warning', 'Cronograma fora de 100%', `A distribuicao atual esta em ${schedulePercent.toFixed(2).replace('.', ',')}%.`);
+  }
+
+  if (budgetTotal > 0 && measuredTotal > budgetTotal) {
+    addIssue('critical', 'Medicoes acima do total', 'O valor medido ultrapassa o total do orcamento.');
+  }
+
+  return issues;
+}
+
+export function getEngineeringHealthScore(issues = []) {
+  const penalties = {
+    critical: 24,
+    warning: 13,
+    info: 6,
+  };
+
+  const score = issues.reduce((acc, issue) => acc - (penalties[issue.severity] || 0), 100);
+  return Math.max(0, Math.min(100, score));
 }
 
 const normalizeHeader = (header) => String(header || '')

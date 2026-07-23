@@ -283,9 +283,9 @@ export default function PublicOrcamentoPage() {
                   <div>
                     <p className="font-bold text-slate-900">{item.nome}</p>
                     <p className="mt-1 text-xs text-slate-500">{Number(item.qtd || 0)} {item.unidade || 'un'} x {currency.format(Number(item.precoVenda || 0))}</p>
-                    {technical.enabled && (item.fonte || item.codigo || item.memoria_calculo) && (
+                    {technical.enabled && (item.etapa || item.fonte || item.codigo || item.memoria_calculo) && (
                       <p className="mt-1 text-xs font-semibold text-blue-700">
-                        {[item.fonte, item.codigo && `Codigo ${item.codigo}`, item.memoria_calculo].filter(Boolean).join(' · ')}
+                        {[item.etapa, item.fonte, item.codigo && `Codigo ${item.codigo}`, item.memoria_calculo].filter(Boolean).join(' · ')}
                       </p>
                     )}
                   </div>
@@ -305,9 +305,9 @@ export default function PublicOrcamentoPage() {
                   <div>
                     <p className="font-bold text-slate-900">{item.descricao}</p>
                     <p className="mt-1 text-xs text-slate-500">{Number(item.horas || 0)} {item.unidade || 'h'} x {currency.format(Number(item.valorHora || 0))}</p>
-                    {technical.enabled && (item.fonte || item.codigo || item.memoria_calculo) && (
+                    {technical.enabled && (item.etapa || item.fonte || item.codigo || item.memoria_calculo) && (
                       <p className="mt-1 text-xs font-semibold text-blue-700">
-                        {[item.fonte, item.codigo && `Codigo ${item.codigo}`, item.memoria_calculo].filter(Boolean).join(' · ')}
+                        {[item.etapa, item.fonte, item.codigo && `Codigo ${item.codigo}`, item.memoria_calculo].filter(Boolean).join(' · ')}
                       </p>
                     )}
                   </div>
