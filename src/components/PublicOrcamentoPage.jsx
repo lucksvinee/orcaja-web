@@ -186,6 +186,7 @@ export default function PublicOrcamentoPage() {
   const payment = normalizePaymentDetails(orcamento.payment || {});
   const paymentDescription = orcamento.payment_description || buildPaymentDescription(payment, Number(orcamento.total || 0), value => currency.format(value));
   const acceptance = orcamento.client_acceptance || {};
+  const technical = orcamento.technical || {};
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -224,6 +225,11 @@ export default function PublicOrcamentoPage() {
               <p className="mt-2 text-xs opacity-80">
                 Materiais e servicos organizados para decisao rapida.
               </p>
+              {technical.enabled && Number(orcamento.bdi_total || 0) > 0 && (
+                <p className="mt-2 text-sm font-bold opacity-90">
+                  BDI: {currency.format(Number(orcamento.bdi_total || 0))}
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -232,6 +238,38 @@ export default function PublicOrcamentoPage() {
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
             Esta proposta passou da data de validade. Confirme os valores antes de aprovar.
           </div>
+        )}
+
+        {technical.enabled && (
+          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-lg font-black text-slate-900">Dados técnicos</h3>
+            <div className="mt-4 grid gap-4 text-sm md:grid-cols-3">
+              <div>
+                <p className="text-xs font-bold uppercase text-slate-500">Objeto</p>
+                <p className="mt-1 font-semibold text-slate-900">{technical.object || 'Nao informado'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase text-slate-500">Local</p>
+                <p className="mt-1 font-semibold text-slate-900">{technical.location || 'Nao informado'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase text-slate-500">Fonte</p>
+                <p className="mt-1 font-semibold text-slate-900">{[technical.reference_source, technical.reference_uf].filter(Boolean).join('/') || 'Nao informada'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase text-slate-500">Responsavel</p>
+                <p className="mt-1 font-semibold text-slate-900">{[technical.responsible_name, technical.professional_registry].filter(Boolean).join(' · ') || 'Nao informado'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase text-slate-500">Data-base</p>
+                <p className="mt-1 font-semibold text-slate-900">{technical.date_base ? formatDate(technical.date_base) : 'Nao informada'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase text-slate-500">BDI global</p>
+                <p className="mt-1 font-semibold text-slate-900">{Number(technical.global_bdi || 0).toFixed(2).replace('.', ',')}%</p>
+              </div>
+            </div>
+          </section>
         )}
 
         <section className="grid gap-5 lg:grid-cols-2">
@@ -244,7 +282,12 @@ export default function PublicOrcamentoPage() {
                 <div key={`${item.nome}-${index}`} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm last:border-0 last:pb-0">
                   <div>
                     <p className="font-bold text-slate-900">{item.nome}</p>
-                    <p className="mt-1 text-xs text-slate-500">{Number(item.qtd || 0)} un x {currency.format(Number(item.precoVenda || 0))}</p>
+                    <p className="mt-1 text-xs text-slate-500">{Number(item.qtd || 0)} {item.unidade || 'un'} x {currency.format(Number(item.precoVenda || 0))}</p>
+                    {technical.enabled && (item.fonte || item.codigo || item.memoria_calculo) && (
+                      <p className="mt-1 text-xs font-semibold text-blue-700">
+                        {[item.fonte, item.codigo && `Codigo ${item.codigo}`, item.memoria_calculo].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                   </div>
                   <p className="font-black text-slate-900">{currency.format(getLineTotal(item, 'qtd', 'precoVenda'))}</p>
                 </div>
@@ -261,7 +304,12 @@ export default function PublicOrcamentoPage() {
                 <div key={`${item.descricao}-${index}`} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm last:border-0 last:pb-0">
                   <div>
                     <p className="font-bold text-slate-900">{item.descricao}</p>
-                    <p className="mt-1 text-xs text-slate-500">{Number(item.horas || 0)} h x {currency.format(Number(item.valorHora || 0))}</p>
+                    <p className="mt-1 text-xs text-slate-500">{Number(item.horas || 0)} {item.unidade || 'h'} x {currency.format(Number(item.valorHora || 0))}</p>
+                    {technical.enabled && (item.fonte || item.codigo || item.memoria_calculo) && (
+                      <p className="mt-1 text-xs font-semibold text-blue-700">
+                        {[item.fonte, item.codigo && `Codigo ${item.codigo}`, item.memoria_calculo].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                   </div>
                   <p className="font-black text-slate-900">{currency.format(getLineTotal(item, 'horas', 'valorHora'))}</p>
                 </div>
@@ -269,6 +317,26 @@ export default function PublicOrcamentoPage() {
             </div>
           </div>
         </section>
+
+        {technical.enabled && (
+          <section className="rounded-lg border border-blue-200 bg-blue-50 p-5 shadow-sm">
+            <h3 className="text-lg font-black text-blue-950">Resumo técnico</h3>
+            <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+              <div className="rounded-lg bg-white p-3">
+                <p className="text-xs font-bold uppercase text-slate-500">Subtotal</p>
+                <p className="mt-1 text-lg font-black text-slate-900">{currency.format(Number(orcamento.subtotal || 0))}</p>
+              </div>
+              <div className="rounded-lg bg-white p-3">
+                <p className="text-xs font-bold uppercase text-slate-500">BDI</p>
+                <p className="mt-1 text-lg font-black text-slate-900">{currency.format(Number(orcamento.bdi_total || 0))}</p>
+              </div>
+              <div className="rounded-lg bg-white p-3">
+                <p className="text-xs font-bold uppercase text-slate-500">Total</p>
+                <p className="mt-1 text-lg font-black text-blue-950">{currency.format(Number(orcamento.total || 0))}</p>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-lg font-black text-slate-900">Condicoes</h3>

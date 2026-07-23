@@ -127,7 +127,10 @@ service cloud.firestore {
           'servicos',
           'payment',
           'payment_description',
+          'technical',
           'total',
+          'subtotal',
+          'bdi_total',
           'total_materiais',
           'total_servicos',
           'valid_until',
@@ -155,6 +158,26 @@ service cloud.firestore {
           'installments',
           'notes'
         ])
+        && request.resource.data.technical is map
+        && request.resource.data.technical.keys().hasOnly([
+          'enabled',
+          'work_type',
+          'work_type_label',
+          'object',
+          'location',
+          'requester',
+          'responsible_name',
+          'professional_registry',
+          'date_base',
+          'reference_source',
+          'reference_uf',
+          'reference_month',
+          'global_bdi',
+          'technical_notes',
+          'schedule'
+        ])
+        && request.resource.data.technical.schedule is list
+        && request.resource.data.technical.schedule.size() <= 36
         && request.resource.data.itens is list
         && request.resource.data.itens.size() <= 200
         && request.resource.data.servicos is list

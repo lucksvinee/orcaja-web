@@ -148,10 +148,20 @@ export default function ClienteDetail() {
                             <span className={`text-xs px-2 py-1 rounded-full font-semibold ${getOrcamentoStatusClass(orcamento.status)}`}>
                               {getOrcamentoStatusLabel(orcamento.status)}
                             </span>
+                            {orcamento.engineering?.enabled && (
+                              <span className="rounded-full bg-cyan-50 px-2 py-1 text-xs font-bold text-cyan-700">
+                                Engenharia
+                              </span>
+                            )}
                           </div>
                           <p className="text-sm text-slate-500 mt-1">
                             Criado em {new Date(orcamento.created_at).toLocaleDateString('pt-BR')}
                           </p>
+                          {orcamento.engineering?.enabled && (
+                            <p className="mt-1 text-xs font-semibold text-slate-600">
+                              {orcamento.engineering.object || 'Objeto técnico não informado'}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold text-slate-900">

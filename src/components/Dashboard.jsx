@@ -14,6 +14,7 @@ import {
   getOrcamentoStatusLabel,
   normalizeOrcamentoStatus
 } from '../orcamentoStatus';
+import { isEngineeringDateBaseStale } from '../engineeringUtils';
 
 const statusOptions = [
   { value: 'todos', label: 'Todos' },
@@ -69,6 +70,11 @@ export default function Dashboard() {
       ORCAMENTO_STATUS.sent,
       ORCAMENTO_STATUS.viewed
     ].includes(normalizeOrcamentoStatus(o.status)));
+    const engineeringOrcamentos = orcamentos.filter(o => o.engineering?.enabled);
+    const technicalItemsWithoutSource = engineeringOrcamentos.reduce((acc, orcamento) => {
+      const items = [...(orcamento.itens || []), ...(orcamento.servicos || [])];
+      return acc + items.filter(item => !item.fonte).length;
+    }, 0);
     const monthApproved = approved.filter((o) => {
       const createdAt = new Date(o.created_at);
       return createdAt.getMonth() === currentMonth && createdAt.getFullYear() === currentYear;
@@ -82,6 +88,9 @@ export default function Dashboard() {
       pendingCount: pending.length,
       viewedCount: orcamentos.filter(o => normalizeOrcamentoStatus(o.status) === ORCAMENTO_STATUS.viewed).length,
       clientCount: clientes.length,
+      engineeringCount: engineeringOrcamentos.length,
+      technicalItemsWithoutSource,
+      staleEngineeringCount: engineeringOrcamentos.filter(o => isEngineeringDateBaseStale(o.engineering?.date_base)).length,
     };
   }, [orcamentos, clientes]);
 
@@ -93,6 +102,9 @@ export default function Dashboard() {
         orcamento.cliente?.telefone,
         orcamento.status,
         orcamento.numero,
+        orcamento.engineering?.object,
+        orcamento.engineering?.location,
+        orcamento.engineering?.requester,
       ].filter(Boolean).join(' ').toLowerCase();
 
       return haystack.includes(searchTerm.toLowerCase());
@@ -238,7 +250,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Aprovado no mês</p>
               <p className="mt-2 text-2xl font-black text-emerald-300">{currency.format(metrics.monthRevenue)}</p>
@@ -256,6 +268,11 @@ export default function Dashboard() {
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Base de clientes</p>
               <p className="mt-2 text-2xl font-black text-white">{metrics.clientCount}</p>
               <p className="mt-1 text-xs text-slate-500">Histórico e recorrência</p>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Engenharia</p>
+              <p className="mt-2 text-2xl font-black text-cyan-300">{metrics.engineeringCount}</p>
+              <p className="mt-1 text-xs text-slate-500">{metrics.staleEngineeringCount} com data-base antiga</p>
             </div>
           </div>
         </div>
@@ -323,6 +340,16 @@ export default function Dashboard() {
                       <p className="mt-2 text-sm text-slate-600">
                         {(orcamento.itens || []).length} materiais · {(orcamento.servicos || []).length} serviços
                       </p>
+                      {orcamento.engineering?.enabled && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs font-bold uppercase text-cyan-700">
+                            Engenharia · {orcamento.engineering.object || 'Objeto não informado'}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {[orcamento.engineering.reference_source, orcamento.engineering.reference_uf, orcamento.engineering.date_base].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                      )}
                       {normalizeOrcamentoStatus(orcamento.status) === ORCAMENTO_STATUS.viewed && (
                         <p className="mt-1 text-xs font-semibold text-cyan-700">
                           Cliente visualizou a proposta. Vale fazer um lembrete.
@@ -401,6 +428,11 @@ export default function Dashboard() {
                 >
                   Criar proposta em menos de 2 minutos
                 </button>
+                {metrics.technicalItemsWithoutSource > 0 && (
+                  <div className="rounded-lg bg-red-50 p-3 font-semibold text-red-800">
+                    {metrics.technicalItemsWithoutSource} item{metrics.technicalItemsWithoutSource > 1 ? 's' : ''} técnico{metrics.technicalItemsWithoutSource > 1 ? 's' : ''} sem fonte de preço
+                  </div>
+                )}
               </div>
             </div>
 

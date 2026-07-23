@@ -1,3 +1,9 @@
+import {
+  getLineBdiValue,
+  getLineBaseTotal,
+  normalizeEngineeringDetails,
+} from './engineeringUtils';
+
 export function getOrcamentoDraftItems(orcamento) {
   return {
     materiais: Array.isArray(orcamento?.itens) ? orcamento.itens : [],
@@ -23,21 +29,39 @@ export function nextDraftState(previousDraft, draftKey, baseValue, updater) {
   };
 }
 
-export function calculateOrcamentoTotals(materiais = [], maoDeObra = []) {
+export function calculateOrcamentoTotals(materiais = [], maoDeObra = [], engineering = {}) {
+  const engineeringDetails = normalizeEngineeringDetails(engineering);
   const totalMateriais = materiais.reduce(
-    (acc, material) => acc + Number(material.qtd || 0) * Number(material.precoVenda || 0),
+    (acc, material) => acc + getLineBaseTotal(material, 'qtd', 'precoVenda'),
     0,
   );
 
   const totalMaoDeObra = maoDeObra.reduce(
-    (acc, servico) => acc + Number(servico.horas || 0) * Number(servico.valorHora || 0),
+    (acc, servico) => acc + getLineBaseTotal(servico, 'horas', 'valorHora'),
     0,
   );
+
+  const bdiMateriais = materiais.reduce(
+    (acc, material) => acc + getLineBdiValue(material, 'qtd', 'precoVenda', engineeringDetails),
+    0,
+  );
+
+  const bdiMaoDeObra = maoDeObra.reduce(
+    (acc, servico) => acc + getLineBdiValue(servico, 'horas', 'valorHora', engineeringDetails),
+    0,
+  );
+
+  const subtotalGeral = totalMateriais + totalMaoDeObra;
+  const totalBdi = bdiMateriais + bdiMaoDeObra;
 
   return {
     totalMateriais,
     totalMaoDeObra,
-    totalGeral: totalMateriais + totalMaoDeObra,
+    subtotalGeral,
+    bdiMateriais,
+    bdiMaoDeObra,
+    totalBdi,
+    totalGeral: subtotalGeral + totalBdi,
   };
 }
 

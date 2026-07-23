@@ -47,6 +47,22 @@ import {
   sanitizeHexColor,
 } from '../publicOrcamento';
 import { PROFESSIONAL_TEMPLATES } from '../professionalTemplates';
+import {
+  DEFAULT_ENGINEERING_DETAILS,
+  ENGINEERING_PRICE_SOURCE_OPTIONS,
+  ENGINEERING_UF_OPTIONS,
+  ENGINEERING_UNIT_OPTIONS,
+  ENGINEERING_WORK_TYPE_OPTIONS,
+  getEngineeringWorkTypeLabel,
+  getItemBdiRate,
+  getLineBaseTotal,
+  getLineTotalWithBdi,
+  getMeasurementsTotal,
+  getScheduleTotalPercent,
+  isEngineeringDateBaseStale,
+  normalizeEngineeringDetails,
+  parseSinapiCsv,
+} from '../engineeringUtils';
 
 const toPublicNumber = (value) => {
   const parsed = Number(value || 0);
@@ -58,16 +74,28 @@ const toPublicText = (value, fallback, limit = 140) => {
   return text.slice(0, limit);
 };
 
+const toPublicOptionalText = (value, limit = 180) => String(value || '').trim().slice(0, limit);
+
 const buildPublicMaterial = (item) => ({
   nome: toPublicText(item?.nome, 'Material'),
   qtd: toPublicNumber(item?.qtd),
   precoVenda: toPublicNumber(item?.precoVenda),
+  unidade: toPublicOptionalText(item?.unidade || 'un', 20),
+  fonte: toPublicOptionalText(item?.fonte, 80),
+  codigo: toPublicOptionalText(item?.codigo, 60),
+  memoria_calculo: toPublicOptionalText(item?.memoria_calculo, 220),
+  bdi_rate: toPublicNumber(item?.bdi_rate),
 });
 
 const buildPublicServico = (item) => ({
   descricao: toPublicText(item?.descricao, 'Servico'),
   horas: toPublicNumber(item?.horas),
   valorHora: toPublicNumber(item?.valorHora),
+  unidade: toPublicOptionalText(item?.unidade || 'h', 20),
+  fonte: toPublicOptionalText(item?.fonte, 80),
+  codigo: toPublicOptionalText(item?.codigo, 60),
+  memoria_calculo: toPublicOptionalText(item?.memoria_calculo, 220),
+  bdi_rate: toPublicNumber(item?.bdi_rate),
 });
 
 export default function NovoOrcamento() {
@@ -103,12 +131,18 @@ export default function NovoOrcamento() {
   const draftKey = orcamentoId || `novo:${clienteId || 'sem-cliente'}`;
   const baseDraftItems = useMemo(() => getOrcamentoDraftItems(orcamentoExistente), [orcamentoExistente]);
   const basePaymentDetails = useMemo(() => normalizePaymentDetails(orcamentoExistente?.payment || DEFAULT_PAYMENT_DETAILS), [orcamentoExistente]);
+  const baseEngineeringDetails = useMemo(
+    () => normalizeEngineeringDetails(orcamentoExistente?.engineering || DEFAULT_ENGINEERING_DETAILS),
+    [orcamentoExistente]
+  );
   const [materiaisDraft, setMateriaisDraft] = useState({ key: draftKey, value: null });
   const [maoDeObraDraft, setMaoDeObraDraft] = useState({ key: draftKey, value: null });
   const [paymentDraft, setPaymentDraft] = useState({ key: draftKey, value: null });
+  const [engineeringDraft, setEngineeringDraft] = useState({ key: draftKey, value: null });
   const materiais = getDraftValue(materiaisDraft, draftKey, baseDraftItems.materiais);
   const maoDeObra = getDraftValue(maoDeObraDraft, draftKey, baseDraftItems.maoDeObra);
   const paymentDetails = getDraftValue(paymentDraft, draftKey, basePaymentDetails);
+  const engineeringDetails = getDraftValue(engineeringDraft, draftKey, baseEngineeringDetails);
 
   const setMateriais = useCallback((updater) => {
     setMateriaisDraft((previousDraft) => nextDraftState(previousDraft, draftKey, baseDraftItems.materiais, updater));
@@ -122,17 +156,46 @@ export default function NovoOrcamento() {
     setPaymentDraft((previousDraft) => nextDraftState(previousDraft, draftKey, basePaymentDetails, updater));
   }, [draftKey, basePaymentDetails]);
 
+  const setEngineeringDetails = useCallback((updater) => {
+    setEngineeringDraft((previousDraft) => nextDraftState(previousDraft, draftKey, baseEngineeringDetails, (currentValue) => {
+      const nextValue = typeof updater === 'function' ? updater(currentValue) : updater;
+      return normalizeEngineeringDetails(nextValue);
+    }));
+  }, [draftKey, baseEngineeringDetails]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showModalMaterial, setShowModalMaterial] = useState(false);
   const [showModalServico, setShowModalServico] = useState(false);
-  const [novoMaterial, setNovoMaterial] = useState({ nome: '', qtd: 1, precoVenda: '', custo: '' });
-  const [novoServico, setNovoServico] = useState({ descricao: '', horas: 1, valorHora: '' });
+  const [novoMaterial, setNovoMaterial] = useState({
+    nome: '',
+    qtd: 1,
+    precoVenda: '',
+    custo: '',
+    unidade: 'un',
+    fonte: 'Composicao propria',
+    codigo: '',
+    memoria_calculo: '',
+    bdi_rate: '',
+  });
+  const [novoServico, setNovoServico] = useState({
+    descricao: '',
+    horas: 1,
+    valorHora: '',
+    unidade: 'h',
+    fonte: 'Composicao propria',
+    codigo: '',
+    memoria_calculo: '',
+    bdi_rate: '',
+  });
   const [expandedMaterial, setExpandedMaterial] = useState(null);
+  const [expandedServico, setExpandedServico] = useState(null);
   const [catalogMode, setCatalogMode] = useState('materiais');
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategory, setCatalogCategory] = useState('todos');
   const [catalogOverrides, setCatalogOverrides] = useState({ materiais: {}, servicos: {}, pacotes: {} });
   const [catalogDrafts, setCatalogDrafts] = useState({});
+  const [sinapiItems, setSinapiItems] = useState([]);
+  const [sinapiSearch, setSinapiSearch] = useState('');
   const [savingCatalogItem, setSavingCatalogItem] = useState(null);
   const [isCatalogCollapsed, setIsCatalogCollapsed] = useState(false);
   const [catalogFeedback, setCatalogFeedback] = useState('');
@@ -185,6 +248,119 @@ export default function NovoOrcamento() {
     toast('Assistente de IA em breve. A geração automática ficará disponível após a configuração.');
   };
 
+  const resetNovoMaterial = () => setNovoMaterial({
+    nome: '',
+    qtd: 1,
+    precoVenda: '',
+    custo: '',
+    unidade: 'un',
+    fonte: engineeringDetails.enabled ? engineeringDetails.reference_source : 'Composicao propria',
+    codigo: '',
+    memoria_calculo: '',
+    bdi_rate: '',
+  });
+
+  const resetNovoServico = () => setNovoServico({
+    descricao: '',
+    horas: 1,
+    valorHora: '',
+    unidade: 'h',
+    fonte: engineeringDetails.enabled ? engineeringDetails.reference_source : 'Composicao propria',
+    codigo: '',
+    memoria_calculo: '',
+    bdi_rate: '',
+  });
+
+  const getDefaultItemSource = (source = '') => {
+    if (source) return source;
+    return engineeringDetails.enabled ? engineeringDetails.reference_source : 'Catalogo OrcaJa';
+  };
+
+  const getTechnicalItemFields = (source = {}, unitFallback = 'un') => ({
+    unidade: String(source.unidade || unitFallback).trim(),
+    fonte: getDefaultItemSource(source.fonte),
+    codigo: String(source.codigo || '').trim(),
+    memoria_calculo: String(source.memoria_calculo || '').trim(),
+    bdi_rate: source.bdi_rate === '' || source.bdi_rate === undefined || source.bdi_rate === null
+      ? ''
+      : Number(source.bdi_rate),
+  });
+
+  const updateEngineeringDetail = (field, value) => {
+    setEngineeringDetails(prev => ({
+      ...prev,
+      [field]: ['enabled'].includes(field) ? Boolean(value) : value,
+    }));
+  };
+
+  const updateScheduleStage = (id, field, value) => {
+    setEngineeringDetails(prev => ({
+      ...prev,
+      schedule: prev.schedule.map(stage => (
+        stage.id === id
+          ? { ...stage, [field]: field === 'percentual' ? Number(value) : value }
+          : stage
+      )),
+    }));
+  };
+
+  const addScheduleStage = () => {
+    setEngineeringDetails(prev => ({
+      ...prev,
+      schedule: [
+        ...prev.schedule,
+        {
+          id: nextNumericId(prev.schedule),
+          etapa: `Etapa ${prev.schedule.length + 1}`,
+          periodo: '',
+          percentual: 0,
+        },
+      ],
+    }));
+  };
+
+  const removeScheduleStage = (id) => {
+    setEngineeringDetails(prev => ({
+      ...prev,
+      schedule: prev.schedule.filter(stage => stage.id !== id),
+    }));
+  };
+
+  const updateMeasurement = (id, field, value) => {
+    setEngineeringDetails(prev => ({
+      ...prev,
+      measurements: prev.measurements.map(measurement => (
+        measurement.id === id
+          ? { ...measurement, [field]: ['percentual', 'valor'].includes(field) ? Number(value) : value }
+          : measurement
+      )),
+    }));
+  };
+
+  const addMeasurement = () => {
+    setEngineeringDetails(prev => ({
+      ...prev,
+      measurements: [
+        ...prev.measurements,
+        {
+          id: nextNumericId(prev.measurements),
+          data: new Date().toISOString().slice(0, 10),
+          etapa: `Medicao ${prev.measurements.length + 1}`,
+          percentual: 0,
+          valor: 0,
+          observacao: '',
+        },
+      ],
+    }));
+  };
+
+  const removeMeasurement = (id) => {
+    setEngineeringDetails(prev => ({
+      ...prev,
+      measurements: prev.measurements.filter(measurement => measurement.id !== id),
+    }));
+  };
+
   const removeMaterial = id => setMateriais(materiais.filter(item => item.id !== id));
   const removeServico = id => setMaoDeObra(maoDeObra.filter(item => item.id !== id));
 
@@ -199,11 +375,12 @@ export default function NovoOrcamento() {
         qtd: Number(novoMaterial.qtd),
         precoVenda: Number(novoMaterial.precoVenda),
         custo: Number(novoMaterial.custo) || 0,
-        precoInternet: estimateInternetPrice(novoMaterial.nome, novoMaterial.precoVenda)
+        precoInternet: estimateInternetPrice(novoMaterial.nome, novoMaterial.precoVenda),
+        ...getTechnicalItemFields(novoMaterial, novoMaterial.unidade || 'un'),
       }
     ]);
 
-    setNovoMaterial({ nome: '', qtd: 1, precoVenda: '', custo: '' });
+    resetNovoMaterial();
     setShowModalMaterial(false);
     showCatalogFeedback(`${novoMaterial.nome} adicionado aos materiais.`);
   };
@@ -217,11 +394,12 @@ export default function NovoOrcamento() {
         id: nextNumericId(prev),
         descricao: novoServico.descricao,
         horas: Number(novoServico.horas),
-        valorHora: Number(novoServico.valorHora)
+        valorHora: Number(novoServico.valorHora),
+        ...getTechnicalItemFields(novoServico, novoServico.unidade || 'h'),
       }
     ]);
 
-    setNovoServico({ descricao: '', horas: 1, valorHora: '' });
+    resetNovoServico();
     setShowModalServico(false);
     showCatalogFeedback(`${novoServico.descricao} adicionado aos serviços.`);
   };
@@ -235,7 +413,8 @@ export default function NovoOrcamento() {
         qtd: Number(material.qtd || 1),
         precoVenda: Number(material.precoVenda || 0),
         custo: Number(material.custo || 0),
-        precoInternet: estimateInternetPrice(material.nome, material.precoVenda)
+        precoInternet: estimateInternetPrice(material.nome, material.precoVenda),
+        ...getTechnicalItemFields(material, material.unidade || 'un'),
       }
     ]);
     showCatalogFeedback(`${material.nome} adicionado aos materiais.`);
@@ -248,7 +427,8 @@ export default function NovoOrcamento() {
         id: nextNumericId(prev),
         descricao: servico.descricao,
         horas: Number(servico.horas || 1),
-        valorHora: Number(servico.valorHora || 0)
+        valorHora: Number(servico.valorHora || 0),
+        ...getTechnicalItemFields(servico, servico.unidade || 'h'),
       }
     ]);
     showCatalogFeedback(`${servico.descricao} adicionado aos serviços.`);
@@ -268,7 +448,8 @@ export default function NovoOrcamento() {
             qtd: Number(customMaterial.qtd || material.qtd || 1),
             precoVenda: Number(customMaterial.precoVenda || 0),
             custo: Number(customMaterial.custo || 0),
-            precoInternet: estimateInternetPrice(customMaterial.nome, customMaterial.precoVenda)
+            precoInternet: estimateInternetPrice(customMaterial.nome, customMaterial.precoVenda),
+            ...getTechnicalItemFields(customMaterial, customMaterial.unidade || 'un'),
           };
         })
       ];
@@ -285,7 +466,8 @@ export default function NovoOrcamento() {
             id: firstId + index,
             descricao: customServico.descricao,
             horas: Number(customServico.horas || servico.horas || 1),
-            valorHora: Number(customServico.valorHora || 0)
+            valorHora: Number(customServico.valorHora || 0),
+            ...getTechnicalItemFields(customServico, customServico.unidade || 'h'),
           };
         })
       ];
@@ -303,6 +485,7 @@ export default function NovoOrcamento() {
           ...material,
           id: firstId + index,
           precoInternet: estimateInternetPrice(material.nome, material.precoVenda),
+          ...getTechnicalItemFields(material, material.unidade || 'un'),
         })),
       ];
     });
@@ -314,6 +497,7 @@ export default function NovoOrcamento() {
         ...template.servicos.map((servico, index) => ({
           ...servico,
           id: firstId + index,
+          ...getTechnicalItemFields(servico, servico.unidade || 'h'),
         })),
       ];
     });
@@ -396,7 +580,21 @@ export default function NovoOrcamento() {
   };
 
   const updateMaterial = (id, field, value) => {
-    setMateriais(materiais.map(item => item.id === id ? { ...item, [field]: field === 'nome' ? value : Number(value) } : item));
+    const numericFields = ['qtd', 'precoVenda', 'custo', 'bdi_rate'];
+    setMateriais(materiais.map(item => (
+      item.id === id
+        ? { ...item, [field]: numericFields.includes(field) && value !== '' ? Number(value) : value }
+        : item
+    )));
+  };
+
+  const updateServico = (id, field, value) => {
+    const numericFields = ['horas', 'valorHora', 'bdi_rate'];
+    setMaoDeObra(maoDeObra.map(item => (
+      item.id === id
+        ? { ...item, [field]: numericFields.includes(field) && value !== '' ? Number(value) : value }
+        : item
+    )));
   };
 
   const updatePaymentDetails = (field, value) => {
@@ -404,6 +602,74 @@ export default function NovoOrcamento() {
       ...prev,
       [field]: ['down_payment', 'installments'].includes(field) ? Number(value) : value,
     }));
+  };
+
+  const importSinapiCsv = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toast.error('Exporte a planilha do SINAPI como CSV para importar nesta versão.');
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const importedItems = parseSinapiCsv(text);
+      setSinapiItems(importedItems);
+      setSinapiSearch('');
+      setEngineeringDetails(prev => ({
+        ...prev,
+        enabled: true,
+        reference_source: 'SINAPI',
+      }));
+      toast.success(`${importedItems.length} itens técnicos importados.`);
+    } catch (error) {
+      console.error('Erro ao importar SINAPI:', error);
+      toast.error('Não foi possível importar o CSV.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const addSinapiItem = (item, targetType) => {
+    const technicalFields = getTechnicalItemFields({
+      unidade: item.unidade,
+      fonte: item.fonte || 'SINAPI',
+      codigo: item.codigo,
+      memoria_calculo: '',
+      bdi_rate: '',
+    }, item.unidade || 'un');
+
+    if (targetType === 'servico') {
+      setMaoDeObra(prev => [
+        ...prev,
+        {
+          id: nextNumericId(prev),
+          descricao: item.descricao,
+          horas: 1,
+          valorHora: Number(item.preco || 0),
+          ...technicalFields,
+        },
+      ]);
+      showCatalogFeedback(`${item.descricao} adicionado aos serviços.`);
+      return;
+    }
+
+    setMateriais(prev => [
+      ...prev,
+      {
+        id: nextNumericId(prev),
+        nome: item.descricao,
+        qtd: 1,
+        precoVenda: Number(item.preco || 0),
+        custo: Number(item.preco || 0),
+        precoInternet: estimateInternetPrice(item.descricao, item.preco),
+        ...technicalFields,
+      },
+    ]);
+    showCatalogFeedback(`${item.descricao} adicionado aos materiais.`);
   };
 
   const alteraQtdMaterial = (id, delta) => {
@@ -574,6 +840,30 @@ export default function NovoOrcamento() {
 
       yPosition += 32;
 
+      if (normalizedEngineeringDetails.enabled) {
+        checkPageBreak(36);
+        pdf.setFont('Helvetica', 'bold');
+        pdf.setFontSize(11);
+        pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        pdf.text('DADOS TÉCNICOS', marginX, yPosition);
+        yPosition += 3;
+
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.roundedRect(marginX, yPosition, pageWidth - 2 * marginX, 30, 2, 2, 'FD');
+
+        pdf.setFont('Helvetica', 'normal');
+        pdf.setFontSize(9);
+        pdf.setTextColor(30, 41, 59);
+        pdf.text(`Tipo: ${getEngineeringWorkTypeLabel(normalizedEngineeringDetails.work_type)}`, marginX + 5, yPosition + 7);
+        pdf.text(`Fonte: ${normalizedEngineeringDetails.reference_source || 'N/A'} ${normalizedEngineeringDetails.reference_uf || ''}`, marginX + 110, yPosition + 7);
+        pdf.text(`Objeto: ${(normalizedEngineeringDetails.object || 'N/A').slice(0, 95)}`, marginX + 5, yPosition + 14);
+        pdf.text(`Local: ${(normalizedEngineeringDetails.location || 'N/A').slice(0, 95)}`, marginX + 5, yPosition + 21);
+        pdf.text(`Responsável: ${(normalizedEngineeringDetails.responsible_name || 'N/A').slice(0, 46)}`, marginX + 5, yPosition + 28);
+        pdf.text(`Registro: ${normalizedEngineeringDetails.professional_registry || 'N/A'}`, marginX + 110, yPosition + 28);
+        yPosition += 38;
+      }
+
       // --- Helper para Títulos de Tabela ---
       const drawTableHeader = (title) => {
         pdf.setFont('Helvetica', 'bold');
@@ -613,9 +903,9 @@ export default function NovoOrcamento() {
 
           pdf.setTextColor(30, 41, 59);
           pdf.text(itemName, marginX + 3, yPosition + 5.5);
-          pdf.text(String(item.qtd), 130, yPosition + 5.5, { align: 'right' });
-          pdf.text(`R$ ${item.precoVenda.toFixed(2).replace('.', ',')}`, 160, yPosition + 5.5, { align: 'right' });
-          pdf.text(`R$ ${(item.qtd * item.precoVenda).toFixed(2).replace('.', ',')}`, pageWidth - marginX - 3, yPosition + 5.5, { align: 'right' });
+          pdf.text(`${item.qtd} ${item.unidade || 'un'}`, 130, yPosition + 5.5, { align: 'right' });
+          pdf.text(`R$ ${Number(item.precoVenda || 0).toFixed(2).replace('.', ',')}`, 160, yPosition + 5.5, { align: 'right' });
+          pdf.text(`R$ ${getLineBaseTotal(item, 'qtd', 'precoVenda').toFixed(2).replace('.', ',')}`, pageWidth - marginX - 3, yPosition + 5.5, { align: 'right' });
           
           yPosition += tableRowHeight;
         });
@@ -647,9 +937,9 @@ export default function NovoOrcamento() {
 
           pdf.setTextColor(30, 41, 59);
           pdf.text(itemDesc, marginX + 3, yPosition + 5.5);
-          pdf.text(String(item.horas), 130, yPosition + 5.5, { align: 'right' });
-          pdf.text(`R$ ${item.valorHora.toFixed(2).replace('.', ',')}`, 160, yPosition + 5.5, { align: 'right' });
-          pdf.text(`R$ ${(item.horas * item.valorHora).toFixed(2).replace('.', ',')}`, pageWidth - marginX - 3, yPosition + 5.5, { align: 'right' });
+          pdf.text(`${item.horas} ${item.unidade || 'h'}`, 130, yPosition + 5.5, { align: 'right' });
+          pdf.text(`R$ ${Number(item.valorHora || 0).toFixed(2).replace('.', ',')}`, 160, yPosition + 5.5, { align: 'right' });
+          pdf.text(`R$ ${getLineBaseTotal(item, 'horas', 'valorHora').toFixed(2).replace('.', ',')}`, pageWidth - marginX - 3, yPosition + 5.5, { align: 'right' });
           
           yPosition += tableRowHeight;
         });
@@ -667,7 +957,7 @@ export default function NovoOrcamento() {
       checkPageBreak(40);
       yPosition += 5;
       const summaryBoxW = 80;
-      const summaryBoxH = 30;
+      const summaryBoxH = normalizedEngineeringDetails.enabled && totalBdi > 0 ? 42 : 30;
       const summaryBoxX = pageWidth - marginX - summaryBoxW;
       
       pdf.setFillColor(239, 246, 255); // light accent
@@ -683,14 +973,19 @@ export default function NovoOrcamento() {
       
       pdf.text('Serviços:', summaryBoxX + 5, yPosition + 14);
       pdf.text(`R$ ${totalMaoDeObra.toFixed(2).replace('.', ',')}`, summaryBoxX + summaryBoxW - 5, yPosition + 14, { align: 'right' });
+
+      if (normalizedEngineeringDetails.enabled && totalBdi > 0) {
+        pdf.text('BDI:', summaryBoxX + 5, yPosition + 20);
+        pdf.text(`R$ ${totalBdi.toFixed(2).replace('.', ',')}`, summaryBoxX + summaryBoxW - 5, yPosition + 20, { align: 'right' });
+      }
       
       pdf.setDrawColor(accentColor[0], accentColor[1], accentColor[2]);
-      pdf.line(summaryBoxX + 5, yPosition + 18, summaryBoxX + summaryBoxW - 5, yPosition + 18);
+      pdf.line(summaryBoxX + 5, yPosition + (normalizedEngineeringDetails.enabled && totalBdi > 0 ? 26 : 18), summaryBoxX + summaryBoxW - 5, yPosition + (normalizedEngineeringDetails.enabled && totalBdi > 0 ? 26 : 18));
   
       pdf.setFont('Helvetica', 'bold');
       pdf.setFontSize(14);
-      pdf.text('TOTAL:', summaryBoxX + 5, yPosition + 25);
-      pdf.text(`R$ ${totalGeral.toFixed(2).replace('.', ',')}`, summaryBoxX + summaryBoxW - 5, yPosition + 25, { align: 'right' });
+      pdf.text('TOTAL:', summaryBoxX + 5, yPosition + (normalizedEngineeringDetails.enabled && totalBdi > 0 ? 35 : 25));
+      pdf.text(`R$ ${totalGeral.toFixed(2).replace('.', ',')}`, summaryBoxX + summaryBoxW - 5, yPosition + (normalizedEngineeringDetails.enabled && totalBdi > 0 ? 35 : 25), { align: 'right' });
       yPosition += summaryBoxH + 8;
 
       checkPageBreak(22);
@@ -707,6 +1002,82 @@ export default function NovoOrcamento() {
       if (normalizedPaymentDetails.notes) {
         pdf.text(normalizedPaymentDetails.notes.slice(0, 100), marginX, yPosition);
         yPosition += 5;
+      }
+
+      if (normalizedEngineeringDetails.enabled) {
+        const memoryRows = [
+          ...materiais.map(item => ({
+            label: item.nome,
+            memory: item.memoria_calculo,
+            source: item.fonte,
+            code: item.codigo,
+          })),
+          ...maoDeObra.map(item => ({
+            label: item.descricao,
+            memory: item.memoria_calculo,
+            source: item.fonte,
+            code: item.codigo,
+          })),
+        ].filter(item => item.memory || item.source || item.code).slice(0, 10);
+
+        if (memoryRows.length) {
+          checkPageBreak(20 + memoryRows.length * 8);
+          yPosition += 5;
+          pdf.setFont('Helvetica', 'bold');
+          pdf.setFontSize(11);
+          pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          pdf.text('MEMÓRIA DE CÁLCULO E FONTES', marginX, yPosition);
+          yPosition += 6;
+
+          pdf.setFont('Helvetica', 'normal');
+          pdf.setFontSize(8);
+          pdf.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+          memoryRows.forEach((item) => {
+            checkPageBreak(8);
+            const sourceLine = [item.code && `Cód. ${item.code}`, item.source].filter(Boolean).join(' | ');
+            pdf.text(`${item.label.slice(0, 70)}${sourceLine ? ` - ${sourceLine}` : ''}`.slice(0, 120), marginX, yPosition);
+            yPosition += 4;
+            if (item.memory) {
+              pdf.text(`Memória: ${item.memory.slice(0, 120)}`, marginX, yPosition);
+              yPosition += 4;
+            }
+          });
+        }
+
+        if (normalizedEngineeringDetails.schedule.length) {
+          checkPageBreak(20 + normalizedEngineeringDetails.schedule.length * 6);
+          yPosition += 5;
+          pdf.setFont('Helvetica', 'bold');
+          pdf.setFontSize(11);
+          pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          pdf.text('CRONOGRAMA FÍSICO-FINANCEIRO', marginX, yPosition);
+          yPosition += 6;
+
+          pdf.setFont('Helvetica', 'normal');
+          pdf.setFontSize(8);
+          pdf.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+          normalizedEngineeringDetails.schedule.forEach((stage) => {
+            checkPageBreak(6);
+            const stageValue = totalGeral * (Number(stage.percentual || 0) / 100);
+            pdf.text(`${stage.etapa} | ${stage.periodo || 'Sem período'} | ${stage.percentual}% | R$ ${stageValue.toFixed(2).replace('.', ',')}`, marginX, yPosition);
+            yPosition += 5;
+          });
+        }
+
+        if (normalizedEngineeringDetails.technical_notes) {
+          checkPageBreak(16);
+          yPosition += 5;
+          pdf.setFont('Helvetica', 'bold');
+          pdf.setFontSize(11);
+          pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+          pdf.text('OBSERVAÇÕES TÉCNICAS', marginX, yPosition);
+          yPosition += 5;
+          pdf.setFont('Helvetica', 'normal');
+          pdf.setFontSize(8);
+          pdf.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+          pdf.text(normalizedEngineeringDetails.technical_notes.slice(0, 160), marginX, yPosition);
+          yPosition += 6;
+        }
       }
 
       // --- Condições / Observações ---
@@ -754,10 +1125,20 @@ export default function NovoOrcamento() {
     }
   };
 
-  const { totalMateriais, totalMaoDeObra, totalGeral } = calculateOrcamentoTotals(materiais, maoDeObra);
+  const normalizedEngineeringDetails = normalizeEngineeringDetails(engineeringDetails);
+  const {
+    totalMateriais,
+    totalMaoDeObra,
+    subtotalGeral,
+    totalBdi,
+    totalGeral,
+  } = calculateOrcamentoTotals(materiais, maoDeObra, normalizedEngineeringDetails);
   const formatCurrencyText = (value) => `R$ ${Number(value || 0).toFixed(2).replace('.', ',')}`;
   const normalizedPaymentDetails = normalizePaymentDetails(paymentDetails);
   const paymentDescription = buildPaymentDescription(normalizedPaymentDetails, totalGeral, formatCurrencyText);
+  const schedulePercent = getScheduleTotalPercent(normalizedEngineeringDetails.schedule);
+  const measuredTotal = getMeasurementsTotal(normalizedEngineeringDetails.measurements);
+  const dateBaseIsStale = isEngineeringDateBaseStale(normalizedEngineeringDetails.date_base);
 
   const normalizeWhatsAppPhone = (phone = '') => {
     const digits = phone.replace(/\D/g, '');
@@ -772,9 +1153,18 @@ export default function NovoOrcamento() {
     const linhas = [
       `Olá, ${cliente?.nome || 'tudo bem'}!`,
       `${companyName || 'Nossa equipe'} preparou o orçamento #${numero}.`,
+      normalizedEngineeringDetails.enabled && normalizedEngineeringDetails.object
+        ? `Objeto: ${normalizedEngineeringDetails.object}.`
+        : '',
       `Materiais: R$ ${totalMateriais.toFixed(2).replace('.', ',')}`,
       `Serviços: R$ ${totalMaoDeObra.toFixed(2).replace('.', ',')}`,
+      normalizedEngineeringDetails.enabled && totalBdi > 0
+        ? `BDI: R$ ${totalBdi.toFixed(2).replace('.', ',')}`
+        : '',
       `Total: R$ ${totalGeral.toFixed(2).replace('.', ',')}`,
+      normalizedEngineeringDetails.enabled
+        ? `Fonte de preços: ${normalizedEngineeringDetails.reference_source}${normalizedEngineeringDetails.reference_uf ? `/${normalizedEngineeringDetails.reference_uf}` : ''}.`
+        : '',
       `Pagamento: ${paymentDescription}`,
       proposalUrl ? `Aprove ou acompanhe por aqui: ${proposalUrl}` : '',
       'O orçamento é válido por 15 dias. Posso tirar alguma dúvida?'
@@ -788,6 +1178,9 @@ export default function NovoOrcamento() {
     itens: materiais,
     servicos: maoDeObra,
     total: totalGeral,
+    subtotal: subtotalGeral,
+    bdi_total: totalBdi,
+    engineering: normalizedEngineeringDetails,
     payment: normalizedPaymentDetails,
     status,
   });
@@ -867,7 +1260,26 @@ export default function NovoOrcamento() {
         servicos: publicServicos,
         payment: normalizedPaymentDetails,
         payment_description: paymentDescription,
+        technical: {
+          enabled: normalizedEngineeringDetails.enabled,
+          work_type: normalizedEngineeringDetails.work_type,
+          work_type_label: getEngineeringWorkTypeLabel(normalizedEngineeringDetails.work_type),
+          object: normalizedEngineeringDetails.object,
+          location: normalizedEngineeringDetails.location,
+          requester: normalizedEngineeringDetails.requester,
+          responsible_name: normalizedEngineeringDetails.responsible_name,
+          professional_registry: normalizedEngineeringDetails.professional_registry,
+          date_base: normalizedEngineeringDetails.date_base,
+          reference_source: normalizedEngineeringDetails.reference_source,
+          reference_uf: normalizedEngineeringDetails.reference_uf,
+          reference_month: normalizedEngineeringDetails.reference_month,
+          global_bdi: normalizedEngineeringDetails.global_bdi,
+          technical_notes: normalizedEngineeringDetails.technical_notes,
+          schedule: normalizedEngineeringDetails.schedule,
+        },
         total: totalGeral,
+        subtotal: subtotalGeral,
+        bdi_total: totalBdi,
         total_materiais: totalMateriais,
         total_servicos: totalMaoDeObra,
         valid_until: getDefaultValidUntil(),
@@ -1072,6 +1484,11 @@ export default function NovoOrcamento() {
       && text.includes(catalogSearch.toLowerCase());
   });
 
+  const filteredSinapiItems = sinapiItems.filter((item) => {
+    const haystack = [item.codigo, item.descricao, item.unidade].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(sinapiSearch.toLowerCase());
+  }).slice(0, 8);
+
   const currentStatus = normalizeOrcamentoStatus(orcamentoExistente?.status);
 
   return (
@@ -1187,6 +1604,387 @@ export default function NovoOrcamento() {
             <p className="text-xs font-bold uppercase text-blue-700">Total para aprovação</p>
             <p className="mt-1 text-lg font-black text-blue-950">R$ {totalGeral.toFixed(2).replace('.', ',')}</p>
           </div>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Modo Engenharia</h2>
+              <p className="text-sm text-slate-500">
+                Dados técnicos, BDI, fonte de preços, cronograma e medições.
+              </p>
+            </div>
+            <label className="flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
+              <input
+                type="checkbox"
+                checked={normalizedEngineeringDetails.enabled}
+                onChange={event => updateEngineeringDetail('enabled', event.target.checked)}
+                className="h-4 w-4"
+              />
+              Ativar
+            </label>
+          </div>
+
+          {normalizedEngineeringDetails.enabled ? (
+            <div className="mt-5 space-y-5">
+              <div className="grid gap-3 lg:grid-cols-4">
+                <label className="block text-sm font-bold text-slate-700">
+                  Tipo
+                  <select
+                    value={normalizedEngineeringDetails.work_type}
+                    onChange={event => updateEngineeringDetail('work_type', event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {ENGINEERING_WORK_TYPE_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700 lg:col-span-3">
+                  Objeto
+                  <input
+                    value={normalizedEngineeringDetails.object}
+                    onChange={event => updateEngineeringDetail('object', event.target.value)}
+                    placeholder="Ex.: Reforma da unidade básica de saúde"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700 lg:col-span-2">
+                  Local da obra
+                  <input
+                    value={normalizedEngineeringDetails.location}
+                    onChange={event => updateEngineeringDetail('location', event.target.value)}
+                    placeholder="Endereço, bairro ou equipamento público"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700 lg:col-span-2">
+                  Secretaria ou solicitante
+                  <input
+                    value={normalizedEngineeringDetails.requester}
+                    onChange={event => updateEngineeringDetail('requester', event.target.value)}
+                    placeholder="Secretaria, setor ou fiscal solicitante"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700 lg:col-span-2">
+                  Responsável técnico
+                  <input
+                    value={normalizedEngineeringDetails.responsible_name}
+                    onChange={event => updateEngineeringDetail('responsible_name', event.target.value)}
+                    placeholder="Nome do engenheiro ou arquiteto"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700">
+                  CREA/CAU
+                  <input
+                    value={normalizedEngineeringDetails.professional_registry}
+                    onChange={event => updateEngineeringDetail('professional_registry', event.target.value)}
+                    placeholder="Registro profissional"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700">
+                  BDI global (%)
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={normalizedEngineeringDetails.global_bdi}
+                    onChange={event => updateEngineeringDetail('global_bdi', event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700">
+                  Fonte principal
+                  <select
+                    value={normalizedEngineeringDetails.reference_source}
+                    onChange={event => updateEngineeringDetail('reference_source', event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {ENGINEERING_PRICE_SOURCE_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700">
+                  UF
+                  <select
+                    value={normalizedEngineeringDetails.reference_uf}
+                    onChange={event => updateEngineeringDetail('reference_uf', event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {ENGINEERING_UF_OPTIONS.map(uf => (
+                      <option key={uf} value={uf}>{uf}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700">
+                  Data-base
+                  <input
+                    type="date"
+                    value={normalizedEngineeringDetails.date_base}
+                    onChange={event => updateEngineeringDetail('date_base', event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="block text-sm font-bold text-slate-700">
+                  Mês referência
+                  <input
+                    type="month"
+                    value={normalizedEngineeringDetails.reference_month}
+                    onChange={event => updateEngineeringDetail('reference_month', event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+
+              {(dateBaseIsStale || totalBdi > 0) && (
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-bold uppercase text-slate-500">Subtotal técnico</p>
+                    <p className="mt-1 text-lg font-black text-slate-900">{formatCurrencyText(subtotalGeral)}</p>
+                  </div>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                    <p className="text-xs font-bold uppercase text-blue-700">BDI aplicado</p>
+                    <p className="mt-1 text-lg font-black text-blue-950">{formatCurrencyText(totalBdi)}</p>
+                  </div>
+                  <div className={`rounded-lg border p-3 ${dateBaseIsStale ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                    <p className={`text-xs font-bold uppercase ${dateBaseIsStale ? 'text-amber-700' : 'text-emerald-700'}`}>Data-base</p>
+                    <p className={`mt-1 text-sm font-black ${dateBaseIsStale ? 'text-amber-900' : 'text-emerald-900'}`}>
+                      {dateBaseIsStale ? 'Revisar referência' : 'Dentro do período'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="font-black text-slate-900">Base técnica</h3>
+                      <p className="text-sm text-slate-500">{sinapiItems.length ? `${sinapiItems.length} itens importados` : 'Importe CSV com código, descrição, unidade e preço.'}</p>
+                    </div>
+                    <label className="w-fit cursor-pointer rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50">
+                      Importar CSV
+                      <input
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={importSinapiCsv}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <input
+                    type="search"
+                    value={sinapiSearch}
+                    onChange={event => setSinapiSearch(event.target.value)}
+                    placeholder="Buscar por código ou descrição..."
+                    disabled={!sinapiItems.length}
+                    className="mt-4 w-full rounded-lg border border-slate-200 bg-white p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                  />
+
+                  <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+                    {sinapiItems.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                        A base importada fica apenas nesta edição; os itens escolhidos são salvos no orçamento.
+                      </p>
+                    ) : filteredSinapiItems.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                        Nenhum item técnico encontrado.
+                      </p>
+                    ) : filteredSinapiItems.map(item => (
+                      <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold uppercase text-slate-500">{item.codigo || 'Sem código'} · {item.unidade}</p>
+                            <p className="mt-1 break-words text-sm font-black text-slate-900">{item.descricao}</p>
+                            <p className="mt-1 text-sm font-bold text-slate-700">{formatCurrencyText(item.preco)}</p>
+                          </div>
+                          <div className="grid shrink-0 grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => addSinapiItem(item, 'material')}
+                              className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                            >
+                              Material
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => addSinapiItem(item, 'servico')}
+                              className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
+                            >
+                              Serviço
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-black text-slate-900">Cronograma físico-financeiro</h3>
+                        <p className="text-sm text-slate-500">Distribuição atual: {schedulePercent.toFixed(2).replace('.', ',')}%</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addScheduleStage}
+                        className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800"
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {normalizedEngineeringDetails.schedule.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                          Nenhuma etapa adicionada.
+                        </p>
+                      ) : normalizedEngineeringDetails.schedule.map(stage => (
+                        <div key={stage.id} className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[1.2fr_1fr_100px_32px]">
+                          <input
+                            value={stage.etapa}
+                            onChange={event => updateScheduleStage(stage.id, 'etapa', event.target.value)}
+                            className="rounded border border-slate-200 p-2 text-sm"
+                            placeholder="Etapa"
+                          />
+                          <input
+                            value={stage.periodo}
+                            onChange={event => updateScheduleStage(stage.id, 'periodo', event.target.value)}
+                            className="rounded border border-slate-200 p-2 text-sm"
+                            placeholder="Período"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={stage.percentual}
+                            onChange={event => updateScheduleStage(stage.id, 'percentual', event.target.value)}
+                            className="rounded border border-slate-200 p-2 text-sm"
+                            placeholder="%"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeScheduleStage(stage.id)}
+                            className="rounded border border-red-200 bg-red-50 text-sm font-bold text-red-700 hover:bg-red-100"
+                          >
+                            ×
+                          </button>
+                          <p className="text-xs font-bold text-slate-500 md:col-span-4">
+                            Valor previsto: {formatCurrencyText(totalGeral * (Number(stage.percentual || 0) / 100))}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-black text-slate-900">Medições</h3>
+                        <p className="text-sm text-slate-500">Medido: {formatCurrencyText(measuredTotal)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addMeasurement}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                      >
+                        Registrar
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {normalizedEngineeringDetails.measurements.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                          Nenhuma medição registrada.
+                        </p>
+                      ) : normalizedEngineeringDetails.measurements.map(measurement => (
+                        <div key={measurement.id} className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[130px_1fr_90px_120px_32px]">
+                          <input
+                            type="date"
+                            value={measurement.data}
+                            onChange={event => updateMeasurement(measurement.id, 'data', event.target.value)}
+                            className="rounded border border-slate-200 p-2 text-sm"
+                          />
+                          <input
+                            value={measurement.etapa}
+                            onChange={event => updateMeasurement(measurement.id, 'etapa', event.target.value)}
+                            className="rounded border border-slate-200 p-2 text-sm"
+                            placeholder="Etapa medida"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={measurement.percentual}
+                            onChange={event => updateMeasurement(measurement.id, 'percentual', event.target.value)}
+                            className="rounded border border-slate-200 p-2 text-sm"
+                            placeholder="%"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={measurement.valor}
+                            onChange={event => updateMeasurement(measurement.id, 'valor', event.target.value)}
+                            className="rounded border border-slate-200 p-2 text-sm"
+                            placeholder="Valor"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeMeasurement(measurement.id)}
+                            className="rounded border border-red-200 bg-red-50 text-sm font-bold text-red-700 hover:bg-red-100"
+                          >
+                            ×
+                          </button>
+                          <input
+                            value={measurement.observacao}
+                            onChange={event => updateMeasurement(measurement.id, 'observacao', event.target.value)}
+                            className="rounded border border-slate-200 p-2 text-sm md:col-span-5"
+                            placeholder="Observação da medição"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <label className="block text-sm font-bold text-slate-700">
+                Observações técnicas
+                <textarea
+                  rows={3}
+                  value={normalizedEngineeringDetails.technical_notes}
+                  onChange={event => updateEngineeringDetail('technical_notes', event.target.value)}
+                  placeholder="Critérios adotados, premissas, exclusões e observações da composição."
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+              Orçamentos rápidos continuam iguais. Ative quando precisar de dados técnicos para engenharia.
+            </div>
+          )}
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -1590,8 +2388,14 @@ export default function NovoOrcamento() {
                     <div className="min-w-0 flex-1 text-left">
                       <p className="break-words text-sm font-semibold text-slate-900">{item.nome}</p>
                       <p className="text-xs text-slate-500 mt-1">
-                        {item.qtd} un × R$ {item.precoVenda.toFixed(2).replace('.', ',')} = <strong>R$ {(item.qtd * item.precoVenda).toFixed(2).replace('.', ',')}</strong>
+                        {item.qtd} {item.unidade || 'un'} × R$ {Number(item.precoVenda || 0).toFixed(2).replace('.', ',')} = <strong>{formatCurrencyText(getLineTotalWithBdi(item, 'qtd', 'precoVenda', normalizedEngineeringDetails))}</strong>
+                        {normalizedEngineeringDetails.enabled && getItemBdiRate(item, normalizedEngineeringDetails) > 0 ? ` com BDI ${getItemBdiRate(item, normalizedEngineeringDetails).toFixed(2).replace('.', ',')}%` : ''}
                       </p>
+                      {normalizedEngineeringDetails.enabled && (item.fonte || item.codigo) && (
+                        <p className="mt-1 text-xs font-semibold text-blue-700">
+                          {[item.fonte, item.codigo && `Código ${item.codigo}`].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
                     </div>
                     <div className="shrink-0 text-right">
                       <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1">
@@ -1657,7 +2461,83 @@ export default function NovoOrcamento() {
                             min="0"
                           />
                         </div>
+                        {normalizedEngineeringDetails.enabled && (
+                          <>
+                            <div>
+                              <label className="text-xs text-slate-500">Unidade</label>
+                              <select
+                                value={item.unidade || 'un'}
+                                onChange={e => updateMaterial(item.id, 'unidade', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                              >
+                                {ENGINEERING_UNIT_OPTIONS.map(unit => (
+                                  <option key={unit} value={unit}>{unit}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-500">Fonte</label>
+                              <select
+                                value={item.fonte || normalizedEngineeringDetails.reference_source}
+                                onChange={e => updateMaterial(item.id, 'fonte', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                              >
+                                {ENGINEERING_PRICE_SOURCE_OPTIONS.map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-500">Código</label>
+                              <input
+                                value={item.codigo || ''}
+                                onChange={e => updateMaterial(item.id, 'codigo', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                                placeholder="Código da composição"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-500">BDI do item (%)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                value={item.bdi_rate ?? ''}
+                                onChange={e => updateMaterial(item.id, 'bdi_rate', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                                placeholder={`${normalizedEngineeringDetails.global_bdi || 0}`}
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="text-xs text-slate-500">Memória de cálculo</label>
+                              <textarea
+                                rows={2}
+                                value={item.memoria_calculo || ''}
+                                onChange={e => updateMaterial(item.id, 'memoria_calculo', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                                placeholder="Ex.: 12 salas x 3 pontos por sala"
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
+                      {normalizedEngineeringDetails.enabled && (
+                        <div className="grid gap-2 text-xs sm:grid-cols-3">
+                          <div className="rounded-lg bg-white p-2">
+                            <p className="font-bold text-slate-500">Base</p>
+                            <p className="font-black text-slate-900">{formatCurrencyText(getLineBaseTotal(item, 'qtd', 'precoVenda'))}</p>
+                          </div>
+                          <div className="rounded-lg bg-white p-2">
+                            <p className="font-bold text-slate-500">BDI</p>
+                            <p className="font-black text-slate-900">{getItemBdiRate(item, normalizedEngineeringDetails).toFixed(2).replace('.', ',')}%</p>
+                          </div>
+                          <div className="rounded-lg bg-white p-2">
+                            <p className="font-bold text-slate-500">Total</p>
+                            <p className="font-black text-slate-900">{formatCurrencyText(getLineTotalWithBdi(item, 'qtd', 'precoVenda', normalizedEngineeringDetails))}</p>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex gap-2">
                         <button 
                           onClick={() => removeMaterial(item.id)}
@@ -1693,36 +2573,148 @@ export default function NovoOrcamento() {
           ) : (
             <div className="space-y-2">
               {maoDeObra.map(item => (
-                <div key={item.id} className="flex min-w-0 flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm font-semibold text-slate-900">{item.descricao}</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {item.horas} h × R$ {item.valorHora.toFixed(2).replace('.', ',')} = <strong>R$ {(item.horas * item.valorHora).toFixed(2).replace('.', ',')}</strong>
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2 sm:ml-4">
-                    <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-1">
-                      <button 
-                        onClick={() => alteraHoras(item.id, -1)}
-                        className="w-6 h-6 rounded text-red-600 hover:bg-red-50 text-xs font-bold"
+                <div key={item.id} className="rounded-lg border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
+                  <div className="flex min-w-0 flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-semibold text-slate-900">{item.descricao}</p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {item.horas} {item.unidade || 'h'} × R$ {Number(item.valorHora || 0).toFixed(2).replace('.', ',')} = <strong>{formatCurrencyText(getLineTotalWithBdi(item, 'horas', 'valorHora', normalizedEngineeringDetails))}</strong>
+                        {normalizedEngineeringDetails.enabled && getItemBdiRate(item, normalizedEngineeringDetails) > 0 ? ` com BDI ${getItemBdiRate(item, normalizedEngineeringDetails).toFixed(2).replace('.', ',')}%` : ''}
+                      </p>
+                      {normalizedEngineeringDetails.enabled && (item.fonte || item.codigo) && (
+                        <p className="mt-1 text-xs font-semibold text-blue-700">
+                          {[item.fonte, item.codigo && `Código ${item.codigo}`].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 sm:ml-4">
+                      <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-1">
+                        <button
+                          onClick={() => alteraHoras(item.id, -1)}
+                          className="w-6 h-6 rounded text-red-600 hover:bg-red-50 text-xs font-bold"
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center text-xs font-semibold">{item.horas}</span>
+                        <button
+                          onClick={() => alteraHoras(item.id, 1)}
+                          className="w-6 h-6 rounded text-green-600 hover:bg-green-50 text-xs font-bold"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedServico(expandedServico === item.id ? null : item.id)}
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
                       >
-                        −
+                        Detalhes
                       </button>
-                      <span className="w-8 text-center text-xs font-semibold">{item.horas}</span>
-                      <button 
-                        onClick={() => alteraHoras(item.id, 1)}
-                        className="w-6 h-6 rounded text-green-600 hover:bg-green-50 text-xs font-bold"
+                      <button
+                        onClick={() => removeServico(item.id)}
+                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-xs font-semibold hover:bg-red-100 transition"
                       >
-                        +
+                        Remover
                       </button>
                     </div>
-                    <button 
-                      onClick={() => removeServico(item.id)}
-                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-xs font-semibold hover:bg-red-100 transition"
-                    >
-                      🗑️
-                    </button>
                   </div>
+
+                  {expandedServico === item.id && (
+                    <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
+                      <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                        <div>
+                          <label className="text-xs text-slate-500">Descrição</label>
+                          <input
+                            value={item.descricao}
+                            onChange={e => updateServico(item.id, 'descricao', e.target.value)}
+                            className="w-full rounded border border-slate-200 p-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Quantidade/Horas</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.horas}
+                            onChange={e => updateServico(item.id, 'horas', e.target.value)}
+                            className="w-full rounded border border-slate-200 p-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Valor unitário</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.valorHora}
+                            onChange={e => updateServico(item.id, 'valorHora', e.target.value)}
+                            className="w-full rounded border border-slate-200 p-2 text-sm"
+                          />
+                        </div>
+                        {normalizedEngineeringDetails.enabled && (
+                          <>
+                            <div>
+                              <label className="text-xs text-slate-500">Unidade</label>
+                              <select
+                                value={item.unidade || 'h'}
+                                onChange={e => updateServico(item.id, 'unidade', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                              >
+                                {ENGINEERING_UNIT_OPTIONS.map(unit => (
+                                  <option key={unit} value={unit}>{unit}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-500">Fonte</label>
+                              <select
+                                value={item.fonte || normalizedEngineeringDetails.reference_source}
+                                onChange={e => updateServico(item.id, 'fonte', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                              >
+                                {ENGINEERING_PRICE_SOURCE_OPTIONS.map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-500">Código</label>
+                              <input
+                                value={item.codigo || ''}
+                                onChange={e => updateServico(item.id, 'codigo', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                                placeholder="Código da composição"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-500">BDI do item (%)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.01"
+                                value={item.bdi_rate ?? ''}
+                                onChange={e => updateServico(item.id, 'bdi_rate', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                                placeholder={`${normalizedEngineeringDetails.global_bdi || 0}`}
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="text-xs text-slate-500">Memória de cálculo</label>
+                              <textarea
+                                rows={2}
+                                value={item.memoria_calculo || ''}
+                                onChange={e => updateServico(item.id, 'memoria_calculo', e.target.value)}
+                                className="w-full rounded border border-slate-200 p-2 text-sm"
+                                placeholder="Ex.: 3 vistorias x 2 horas"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1731,7 +2723,7 @@ export default function NovoOrcamento() {
 
         {/* RESUMO */}
         <div className="rounded-lg bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white shadow-lg">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className={`grid gap-4 ${normalizedEngineeringDetails.enabled && totalBdi > 0 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
             <div className="min-w-0">
               <p className="text-xs uppercase text-slate-300">Materiais</p>
               <p className="mt-2 break-words text-2xl font-black">R$ {totalMateriais.toFixed(2).replace('.', ',')}</p>
@@ -1740,6 +2732,12 @@ export default function NovoOrcamento() {
               <p className="text-xs uppercase text-slate-300">Serviços</p>
               <p className="mt-2 break-words text-2xl font-black">R$ {totalMaoDeObra.toFixed(2).replace('.', ',')}</p>
             </div>
+            {normalizedEngineeringDetails.enabled && totalBdi > 0 && (
+              <div className="min-w-0">
+                <p className="text-xs uppercase text-slate-300">BDI</p>
+                <p className="mt-2 break-words text-2xl font-black">R$ {totalBdi.toFixed(2).replace('.', ',')}</p>
+              </div>
+            )}
             <div className="min-w-0 rounded-lg bg-blue-600 p-4">
               <p className="text-xs uppercase text-blue-100">Total</p>
               <p className="mt-2 break-words text-3xl font-black">R$ {totalGeral.toFixed(2).replace('.', ',')}</p>
@@ -1788,9 +2786,34 @@ export default function NovoOrcamento() {
                     <p className="text-xs font-bold uppercase opacity-80">Total da proposta</p>
                     <p className="mt-2 text-3xl font-black">{formatCurrencyText(totalGeral)}</p>
                     <p className="mt-3 text-sm opacity-90">{paymentDescription}</p>
+                    {normalizedEngineeringDetails.enabled && totalBdi > 0 && (
+                      <p className="mt-2 text-sm opacity-90">BDI: {formatCurrencyText(totalBdi)}</p>
+                    )}
                   </div>
                 </div>
               </section>
+
+              {normalizedEngineeringDetails.enabled && (
+                <section className="rounded-lg border border-slate-200 bg-white p-5">
+                  <h4 className="font-black text-slate-900">Dados técnicos</h4>
+                  <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Objeto</p>
+                      <p className="mt-1 font-semibold text-slate-900">{normalizedEngineeringDetails.object || 'Não informado'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Fonte</p>
+                      <p className="mt-1 font-semibold text-slate-900">{normalizedEngineeringDetails.reference_source}/{normalizedEngineeringDetails.reference_uf}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Responsável</p>
+                      <p className="mt-1 font-semibold text-slate-900">
+                        {[normalizedEngineeringDetails.responsible_name, normalizedEngineeringDetails.professional_registry].filter(Boolean).join(' · ') || 'Não informado'}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              )}
 
               <section className="grid gap-5 lg:grid-cols-2">
                 <div className="rounded-lg border border-slate-200 bg-white p-5">
@@ -1992,6 +3015,52 @@ export default function NovoOrcamento() {
                 className="w-full p-2 rounded border border-slate-200 text-sm"
                 min="0"
               />
+              {normalizedEngineeringDetails.enabled && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <select
+                    value={novoMaterial.unidade}
+                    onChange={e => setNovoMaterial({...novoMaterial, unidade: e.target.value})}
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  >
+                    {ENGINEERING_UNIT_OPTIONS.map(unit => (
+                      <option key={unit} value={unit}>{unit}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={novoMaterial.fonte}
+                    onChange={e => setNovoMaterial({...novoMaterial, fonte: e.target.value})}
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  >
+                    {ENGINEERING_PRICE_SOURCE_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={novoMaterial.codigo}
+                    onChange={e => setNovoMaterial({...novoMaterial, codigo: e.target.value})}
+                    type="text"
+                    placeholder="Código da composição"
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  />
+                  <input
+                    value={novoMaterial.bdi_rate}
+                    onChange={e => setNovoMaterial({...novoMaterial, bdi_rate: e.target.value})}
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="BDI do item (%)"
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  />
+                  <textarea
+                    value={novoMaterial.memoria_calculo}
+                    onChange={e => setNovoMaterial({...novoMaterial, memoria_calculo: e.target.value})}
+                    rows={2}
+                    placeholder="Memória de cálculo"
+                    className="w-full rounded border border-slate-200 p-2 text-sm sm:col-span-2"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex gap-2 mt-6">
               <button 
@@ -2041,6 +3110,52 @@ export default function NovoOrcamento() {
                 className="w-full p-2 rounded border border-slate-200 text-sm"
                 min="0"
               />
+              {normalizedEngineeringDetails.enabled && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <select
+                    value={novoServico.unidade}
+                    onChange={e => setNovoServico({...novoServico, unidade: e.target.value})}
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  >
+                    {ENGINEERING_UNIT_OPTIONS.map(unit => (
+                      <option key={unit} value={unit}>{unit}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={novoServico.fonte}
+                    onChange={e => setNovoServico({...novoServico, fonte: e.target.value})}
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  >
+                    {ENGINEERING_PRICE_SOURCE_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={novoServico.codigo}
+                    onChange={e => setNovoServico({...novoServico, codigo: e.target.value})}
+                    type="text"
+                    placeholder="Código da composição"
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  />
+                  <input
+                    value={novoServico.bdi_rate}
+                    onChange={e => setNovoServico({...novoServico, bdi_rate: e.target.value})}
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="BDI do item (%)"
+                    className="w-full rounded border border-slate-200 p-2 text-sm"
+                  />
+                  <textarea
+                    value={novoServico.memoria_calculo}
+                    onChange={e => setNovoServico({...novoServico, memoria_calculo: e.target.value})}
+                    rows={2}
+                    placeholder="Memória de cálculo"
+                    className="w-full rounded border border-slate-200 p-2 text-sm sm:col-span-2"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex gap-2 mt-6">
               <button 

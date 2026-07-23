@@ -1,4 +1,6 @@
 import { getOrcamentoStatusLabel } from './orcamentoStatus';
+import { getMeasurementsTotal, normalizeEngineeringDetails } from './engineeringUtils';
+import { calculateOrcamentoTotals } from './orcamentoUtils';
 
 const formatDate = (value) => {
   if (!value) return '';
@@ -47,16 +49,35 @@ export function buildClientesCsvRows(clientes = []) {
 }
 
 export function buildOrcamentosCsvRows(orcamentos = []) {
-  return orcamentos.map(orcamento => ({
-    id: orcamento.id,
-    numero: orcamento.numero || '',
-    status: getOrcamentoStatusLabel(orcamento.status),
-    cliente: orcamento.cliente?.nome || '',
-    telefone_cliente: orcamento.cliente?.telefone || '',
-    total: formatCurrency(orcamento.total),
-    materiais: (orcamento.itens || []).length,
-    servicos: (orcamento.servicos || []).length,
-    criado_em: formatDate(orcamento.created_at),
-    atualizado_em: formatDate(orcamento.updated_at),
-  }));
+  return orcamentos.map((orcamento) => {
+    const engineering = normalizeEngineeringDetails(orcamento.engineering || {});
+    const totals = calculateOrcamentoTotals(orcamento.itens || [], orcamento.servicos || [], engineering);
+
+    return {
+      id: orcamento.id,
+      numero: orcamento.numero || '',
+      status: getOrcamentoStatusLabel(orcamento.status),
+      cliente: orcamento.cliente?.nome || '',
+      telefone_cliente: orcamento.cliente?.telefone || '',
+      modo: engineering.enabled ? 'Engenharia' : 'Rapido',
+      objeto: engineering.object,
+      local_obra: engineering.location,
+      solicitante: engineering.requester,
+      responsavel_tecnico: engineering.responsible_name,
+      registro_profissional: engineering.professional_registry,
+      fonte_precos: engineering.reference_source,
+      uf_referencia: engineering.reference_uf,
+      data_base: engineering.date_base,
+      bdi_percentual: engineering.global_bdi,
+      subtotal: formatCurrency(totals.subtotalGeral),
+      bdi_total: formatCurrency(totals.totalBdi),
+      total: formatCurrency(orcamento.total || totals.totalGeral),
+      total_medido: formatCurrency(getMeasurementsTotal(engineering.measurements)),
+      materiais: (orcamento.itens || []).length,
+      servicos: (orcamento.servicos || []).length,
+      revisoes: orcamento.revision_count || 0,
+      criado_em: formatDate(orcamento.created_at),
+      atualizado_em: formatDate(orcamento.updated_at),
+    };
+  });
 }
