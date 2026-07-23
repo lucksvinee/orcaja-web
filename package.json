@@ -11,6 +11,7 @@
     "admin:sanitize-public-orcamentos": "node scripts/sanitizePublicOrcamentos.cjs",
     "firebase:emulators": "firebase emulators:start",
     "firebase:deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes",
+    "firebase:deploy:storage": "firebase deploy --only storage",
     "preview": "vite preview"
   },
   "dependencies": {

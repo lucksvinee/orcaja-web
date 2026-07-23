@@ -113,6 +113,20 @@ service cloud.firestore {
       ];
     }
 
+    function validEngineeringDocumentStatus(status) {
+      return status in [
+        'rascunho',
+        'aguardando_revisao',
+        'devolvido_para_correcao',
+        'revisado',
+        'aprovado',
+        'assinado',
+        'entregue',
+        'arquivado',
+        'cancelado'
+      ];
+    }
+
     function validPublicPayloadShape() {
       return request.resource.data.keys().hasOnly([
           'user_id',
@@ -284,6 +298,16 @@ service cloud.firestore {
         && get(orcamentoPath(orcamentoId)).data.user_id == uid();
     }
 
+    function engineeringDocumentPath(documentId) {
+      return /databases/$(database)/documents/engineering_documents/$(documentId);
+    }
+
+    function ownsEngineeringDocument(documentId) {
+      return signedIn()
+        && exists(engineeringDocumentPath(documentId))
+        && get(engineeringDocumentPath(documentId)).data.user_id == uid();
+    }
+
     match /profiles/{userId} {
       allow get: if signedIn() && (userId == uid() || isAdmin());
       allow list: if isAdmin();
@@ -374,6 +398,61 @@ service cloud.firestore {
           && ownsOrcamento(orcamentoId)
           && request.resource.data.user_id == uid()
           && request.resource.data.orcamento_id == orcamentoId;
+        allow update, delete: if false;
+      }
+    }
+
+    match /professional_profiles/{userId} {
+      allow read: if signedIn() && (userId == uid() || isAdmin());
+      allow create: if signedIn()
+        && userId == uid()
+        && isTenantActive(uid())
+        && ownsIncomingData()
+        && request.resource.data.owner_id == uid();
+      allow update: if signedIn()
+        && userId == uid()
+        && isTenantActive(uid())
+        && keepsOwner()
+        && request.resource.data.user_id == uid()
+        && request.resource.data.owner_id == uid();
+      allow delete: if isAdmin();
+    }
+
+    match /engineering_projects/{projectId} {
+      allow read: if isAdmin() || (ownsExistingData() && isTenantActive(uid()));
+      allow create: if ownsIncomingData()
+        && isTenantActive(uid())
+        && request.resource.data.owner_id == uid();
+      allow update: if ownsExistingData()
+        && isTenantActive(uid())
+        && keepsOwner()
+        && request.resource.data.user_id == uid()
+        && request.resource.data.owner_id == uid();
+      allow delete: if false;
+    }
+
+    match /engineering_documents/{documentId} {
+      allow read: if isAdmin() || (ownsExistingData() && isTenantActive(uid()));
+      allow create: if ownsIncomingData()
+        && isTenantActive(uid())
+        && request.resource.data.owner_id == uid()
+        && validEngineeringDocumentStatus(request.resource.data.status);
+      allow update: if ownsExistingData()
+        && isTenantActive(uid())
+        && keepsOwner()
+        && request.resource.data.user_id == uid()
+        && request.resource.data.owner_id == uid()
+        && validEngineeringDocumentStatus(request.resource.data.status);
+      allow delete: if false;
+
+      match /versions/{versionId} {
+        allow read: if isAdmin() || (ownsEngineeringDocument(documentId) && isTenantActive(uid()));
+        allow create: if signedIn()
+          && isTenantActive(uid())
+          && ownsEngineeringDocument(documentId)
+          && request.resource.data.user_id == uid()
+          && request.resource.data.owner_id == uid()
+          && request.resource.data.document_id == documentId;
         allow update, delete: if false;
       }
     }

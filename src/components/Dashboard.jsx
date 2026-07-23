@@ -205,6 +205,13 @@ export default function Dashboard() {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => navigate('/engenharia')}
+                className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-black text-slate-950 shadow-lg shadow-cyan-950/20 hover:bg-cyan-400"
+              >
+                Engenharia
+              </button>
+              <button
+                type="button"
                 onClick={() => navigate('/clientes')}
                 className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-800"
               >
@@ -420,6 +427,13 @@ export default function Dashboard() {
                   className="w-full rounded-lg bg-blue-50 p-3 text-left font-semibold text-blue-800 hover:bg-blue-100"
                 >
                   Reativar clientes antigos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/engenharia')}
+                  className="w-full rounded-lg bg-slate-100 p-3 text-left font-semibold text-slate-800 hover:bg-slate-200"
+                >
+                  Emitir relatório, RDO ou vistoria técnica
                 </button>
                 <button
                   type="button"

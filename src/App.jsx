@@ -7,6 +7,7 @@ import DashboardPage from './components/Dashboard';
 import ClientesPage from './ClientesPage';
 import ClienteDetailPage from './components/ClienteDetail';
 import NovoOrcamentoPage from './components/NovoOrcamento';
+import EngineeringPage from './components/EngineeringPage';
 import LoginPage from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import BlockedPage from './components/BlockedPage';
@@ -179,6 +180,7 @@ export default function App() {
           <Route path="/orcamento/novo" element={<RequireActiveTenant session={session} profile={profile}><NovoOrcamentoPage /></RequireActiveTenant>} />
           <Route path="/orcamento/novo/:clienteId" element={<RequireActiveTenant session={session} profile={profile}><NovoOrcamentoPage /></RequireActiveTenant>} />
           <Route path="/orcamento/editar/:orcamentoId" element={<RequireActiveTenant session={session} profile={profile}><NovoOrcamentoPage /></RequireActiveTenant>} />
+          <Route path="/engenharia" element={<RequireActiveTenant session={session} profile={profile}><EngineeringPage /></RequireActiveTenant>} />
         </Routes>
         {!isPublicProposal && <PwaInstallPrompt />}
         <Toaster

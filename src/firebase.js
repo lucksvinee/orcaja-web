@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
+import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -59,6 +60,7 @@ const createAuth = () => {
 export const auth = app ? createAuth() : null;
 export const db = app ? getFirestore(app) : null;
 export const functions = app ? getFunctions(app) : null;
+export const storage = app ? getStorage(app) : null;
 
 if (
   firebaseReady
@@ -70,5 +72,6 @@ if (
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
   connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  connectStorageEmulator(storage, '127.0.0.1', 9199);
   globalThis.__ORCAJA_FIREBASE_EMULATORS_CONNECTED__ = true;
 }

@@ -20,6 +20,11 @@ service firebase.storage {
       allow write: if isOwner(userId) && isSafeImage();
     }
 
+    match /engineering/{userId}/{allPaths=**} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isSafeImage();
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }
