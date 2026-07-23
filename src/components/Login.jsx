@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import logo from '../assets/logoOrcaJa.png';
 import { auth, db } from '../firebase';
 import {
@@ -6,6 +6,7 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   GoogleAuthProvider,
+  getRedirectResult,
   signInWithPopup,
   signInWithRedirect
 } from 'firebase/auth';
@@ -36,6 +37,7 @@ const getFriendlyAuthError = (error) => {
     'auth/unauthorized-domain': 'Este domínio não está autorizado no Firebase Authentication.',
     'auth/user-disabled': 'Esta conta foi desativada. Entre em contato com o suporte.',
     'auth/user-not-found': 'Conta não encontrada. Confira o e-mail ou crie uma conta.',
+    'auth/web-storage-unsupported': 'Este modo do navegador bloqueou o armazenamento necessário para manter o login.',
     'auth/weak-password': `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`,
     'auth/wrong-password': 'Senha incorreta.'
   };
@@ -61,6 +63,40 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    if (!auth) return undefined;
+
+    let isMounted = true;
+    globalThis.__ORCAJA_GOOGLE_REDIRECT_PROMISE__ ??= getRedirectResult(auth);
+
+    const completeRedirectLogin = async () => {
+      setLoading(true);
+      try {
+        const result = await globalThis.__ORCAJA_GOOGLE_REDIRECT_PROMISE__;
+        if (result?.user) {
+          await ensureTenantProfile(db, result.user);
+          if (isMounted) {
+            setMsg('Login com Google realizado com sucesso.');
+          }
+        }
+      } catch (error) {
+        if (isMounted) {
+          setErro(getFriendlyAuthError(error));
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    completeRedirectLogin();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();

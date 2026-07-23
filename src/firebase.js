@@ -1,5 +1,13 @@
 import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  connectAuthEmulator,
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 
@@ -28,7 +36,27 @@ export const missingFirebaseVars = requiredFirebaseVars
 export const firebaseReady = missingFirebaseVars.length === 0;
 
 const app = firebaseReady ? initializeApp(firebaseConfig) : null;
-export const auth = app ? getAuth(app) : null;
+
+const createAuth = () => {
+  try {
+    return initializeAuth(app, {
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserSessionPersistence,
+      ],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch (error) {
+    if (error?.code === 'auth/already-initialized') {
+      return getAuth(app);
+    }
+
+    throw error;
+  }
+};
+
+export const auth = app ? createAuth() : null;
 export const db = app ? getFirestore(app) : null;
 export const functions = app ? getFunctions(app) : null;
 
