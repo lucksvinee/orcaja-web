@@ -10,7 +10,7 @@
     "admin:migrate-trial-dates": "node scripts/migrateTrialDates.cjs",
     "admin:sanitize-public-orcamentos": "node scripts/sanitizePublicOrcamentos.cjs",
     "firebase:emulators": "firebase emulators:start",
-    "firebase:deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage",
+    "firebase:deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes",
     "preview": "vite preview"
   },
   "dependencies": {

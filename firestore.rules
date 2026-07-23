@@ -45,6 +45,27 @@ service cloud.firestore {
         && request.resource.data.trial_ends_at.toMillis() <= request.time.toMillis() + 1296000000;
     }
 
+    function validNewTenantProfile() {
+      return request.resource.data.keys().hasOnly([
+          'email',
+          'role',
+          'status',
+          'plan',
+          'trial_ends_at',
+          'created_at',
+          'updated_at'
+        ])
+        && request.resource.data.email is string
+        && request.resource.data.email.size() >= 5
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.role == 'tenant'
+        && request.resource.data.status == 'trialing'
+        && request.resource.data.plan == 'trial'
+        && request.resource.data.created_at is string
+        && request.resource.data.updated_at is string
+        && validNewTrialEnd();
+    }
+
     function isTenantActive(userId) {
       return signedIn()
         && exists(profilePath(userId))
@@ -246,21 +267,18 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && userId == uid()
-        && request.resource.data.email == request.auth.token.email
-        && request.resource.data.role == 'tenant'
-        && request.resource.data.status == 'trialing'
-        && request.resource.data.plan == 'trial'
-        && validNewTrialEnd();
+        && validNewTenantProfile();
 
-      allow update: if signedIn()
-        && userId == uid()
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          'display_name',
-          'phone',
-          'business_type',
-          'updated_at'
-        ])
-        || (
+      allow update: if (
+          signedIn()
+          && userId == uid()
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'display_name',
+            'phone',
+            'business_type',
+            'updated_at'
+          ])
+        ) || (
           isAdmin()
           && validProfileStatus(request.resource.data.status)
         );

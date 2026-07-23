@@ -24,6 +24,12 @@ export const getProfileDate = (value) => {
 
 export const getTrialEndsAtFromProfile = (profile) => getProfileDate(profile?.trial_ends_at);
 
+export const getAuthEmail = (user) => (
+  user?.email
+  || user?.providerData?.find((provider) => provider.email)?.email
+  || ''
+).trim();
+
 export const isTrialExpired = (profile, now = new Date()) => {
   if (profile?.status !== 'trialing') return false;
 
@@ -48,7 +54,7 @@ export const getTenantBlockReason = (profile, now = new Date()) => {
 };
 
 export const buildTrialProfile = (user) => ({
-  email: user.email,
+  email: getAuthEmail(user),
   role: 'tenant',
   status: 'trialing',
   plan: 'trial',
@@ -57,26 +63,42 @@ export const buildTrialProfile = (user) => ({
   updated_at: new Date().toISOString()
 });
 
+const getProfileAccessError = (error) => {
+  if (error?.code !== 'permission-denied') return error;
+
+  const accessError = new Error(
+    'Login confirmado, mas o perfil do usuário não pôde ser criado no Firestore. Publique as regras atualizadas do Firebase e tente novamente.'
+  );
+  accessError.code = error.code;
+  accessError.cause = error;
+  return accessError;
+};
+
 export const ensureTenantProfile = async (db, user) => {
-  const profileRef = doc(db, 'profiles', user.uid);
-  const profileSnap = await getDoc(profileRef);
-
-  if (profileSnap.exists()) {
-    return profileSnap.data();
-  }
-
-  const trialProfile = buildTrialProfile(user);
-
   try {
+    const profileRef = doc(db, 'profiles', user.uid);
+    const profileSnap = await getDoc(profileRef);
+
+    if (profileSnap.exists()) {
+      return profileSnap.data();
+    }
+
+    const trialProfile = buildTrialProfile(user);
+
     await setDoc(profileRef, trialProfile);
     return trialProfile;
   } catch (error) {
-    const refreshedProfileSnap = await getDoc(profileRef);
+    try {
+      const profileRef = doc(db, 'profiles', user.uid);
+      const refreshedProfileSnap = await getDoc(profileRef);
 
-    if (refreshedProfileSnap.exists()) {
-      return refreshedProfileSnap.data();
+      if (refreshedProfileSnap.exists()) {
+        return refreshedProfileSnap.data();
+      }
+    } catch {
+      // Keep the original write/read error so the UI can show the real cause.
     }
 
-    throw error;
+    throw getProfileAccessError(error);
   }
 };

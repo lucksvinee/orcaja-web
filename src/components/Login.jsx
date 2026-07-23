@@ -39,7 +39,8 @@ const getFriendlyAuthError = (error) => {
     'auth/user-not-found': 'Conta não encontrada. Confira o e-mail ou crie uma conta.',
     'auth/web-storage-unsupported': 'Este modo do navegador bloqueou o armazenamento necessário para manter o login.',
     'auth/weak-password': `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`,
-    'auth/wrong-password': 'Senha incorreta.'
+    'auth/wrong-password': 'Senha incorreta.',
+    'permission-denied': 'Login confirmado, mas o perfil não foi liberado no Firestore. Publique as regras atualizadas do Firebase e tente novamente.'
   };
 
   return messages[error?.code] || error?.message || 'Não foi possível concluir a operação.';
